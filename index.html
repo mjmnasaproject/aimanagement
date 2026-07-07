@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Proposal Tracker</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app-root">
+  <!-- TOP APP BAR -->
+  <header class="appbar" id="appbar"></header>
+
+  <div class="page">
+    <div class="wrap">
+      <!-- TRACKER VIEW -->
+      <div id="view-main">
+        <!-- HERO -->
+        <div class="hero">
+          <h1>New thoughts? Share to the world.</h1>
+          <div class="rail" id="rail"></div>
+          <button class="newbtn" id="new-btn"><span class="plus">+</span>New proposal</button>
+        </div>
+
+        <!-- PANEL -->
+        <div class="panel">
+          <div class="panel-head">
+            <span class="tag-dark">Submitted proposals</span>
+            <span class="tag-count" id="count">0 total</span>
+          </div>
+          <div class="search-wrap">
+            <input class="search" id="search" type="text" placeholder="Search proposals..." />
+          </div>
+          <div class="plist" id="plist"></div>
+        </div>
+
+        <p class="foot">Submissions are saved and shared with everyone who opens this tracker.</p>
+      </div>
+
+      <!-- SETTINGS VIEW -->
+      <div id="view-settings" class="hide"></div>
+    </div>
+  </div>
+
+  <!-- MODAL -->
+  <div class="backdrop" id="backdrop"><div class="modal" id="modal"></div></div>
+  <div class="toast" id="toast"></div>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

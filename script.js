@@ -1,0 +1,1339 @@
+(function () {
+  var root = document.getElementById('app-root');
+
+  var ICONS = {
+    doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.3 12.3l2.4 2.4 4.8-5.2"/></svg>',
+    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+    code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 8.5 4.5 12l4 3.5"/><path d="M15.5 8.5 19.5 12l-4 3.5"/></svg>',
+    shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>',
+    rocket: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 15.5C4 17 4 20.5 4 20.5s3.5 0 5-1.5"/><path d="M9 15c-1-4 1-9 8-11 2 7-3 12-7 13z"/><path d="M9.5 14.5 11 16"/><circle cx="14.5" cy="9" r="1.3"/></svg>'
+  };
+
+  var STAGES = [
+    { name: 'Proposal', team: 'Operation Team', type: 'step', icon: 'doc',
+      sop: ['Spot a painful task that’s worth creating a new system for / automating.',
+            'Submit your proposal by filling in the “+ New proposal” form.',
+            'Attach as complete an attachment as possible to help others understand your idea (e.g. presentation slides, flowchart or mindmap).',
+            'Submit and wait for the Management Team’s approval.'] },
+    { name: 'Approval', team: 'Management Team', type: 'gate', icon: 'check',
+      sop: ['Each month the Management Team holds the approval meeting.',
+            'Review the problem statement and the value-created calculation.',
+            'Check the idea fits the company’s direction.',
+            'Check for duplicate work (the idea may already exist, or another team proposed the same).',
+            'Approve or reject the proposal.'] },
+    { name: 'IT Review', team: 'IT Team', type: 'step', icon: 'search',
+      sop: ['Confirm the planned tools are acceptable and supportable.',
+            'Review and advise on the framework.'] },
+    { name: 'Build & Test', team: 'Operation Team', type: 'step', icon: 'code',
+      sop: ['The Operation Team builds the system and brings it to testing.',
+            'Amend the system accordingly if problems occur during testing.',
+            'Fill in the evaluation form before the next step, then submit it in the system for the Management Team to approve before it goes to IT for deploy & go-live.'] },
+    { name: 'Final Approval', team: 'Management Team', type: 'gate', icon: 'shield',
+      sop: ['Hold the final review once user testing and evaluation are complete.',
+            'Check that serious problems are fixed, or have a clear plan.',
+            'Approve for IT to deploy, add conditions, send it back for improvement, or reject.'] },
+    { name: 'Deploy & Go Live', team: 'IT Team', type: 'milestone', icon: 'rocket',
+      sop: ['The evaluated project request is accepted and added to the IT department’s project list.',
+            'IT prepares the deployment and deploys it to production.',
+            'Maintain the system.'] }
+  ];
+  var STORE_KEY = 'proposals';
+  var SHARED = true;
+  var TESTING_STAGE = 3; // Build & Test — evaluation happens here
+
+  var EVAL_CRITERIA = [
+    'Easy to use',
+    'Does what I need it to',
+    'Fast / responsive enough',
+    'Works without errors',
+    'Clear and well laid out'
+  ];
+  var RATINGS = [
+    { v: 'good', label: 'Good' },
+    { v: 'okay', label: 'Okay' },
+    { v: 'poor', label: 'Bad' }
+  ];
+  // proposal-form categories (what a proposal is about)
+  var CATEGORIES = [
+    'Nursery', 'Plantation', 'Mill', 'Account', 'Human Resource (HR)',
+    'HQ Support', 'Administration and Finance', 'Information Technology (IT)', 'Machinery'
+  ];
+  // management PIC areas (assigned to Management users in Settings; Director is a role, not an area)
+  var MGMT_CATEGORIES = [
+    'Admin & Finance', 'HR & HQ', 'Plantation / Operation',
+    'Mill', 'Accounting', 'IT', 'Machinery', 'Nursery'
+  ];
+  // which management area is the PIC for a given proposal category
+  var CAT_TO_MGMT = {
+    'Nursery': 'Nursery',
+    'Plantation': 'Plantation / Operation',
+    'Mill': 'Mill',
+    'Account': 'Accounting',
+    'Human Resource (HR)': 'HR & HQ',
+    'HQ Support': 'HR & HQ',
+    'Administration and Finance': 'Admin & Finance',
+    'Information Technology (IT)': 'IT',
+    'Machinery': 'Machinery'
+  };
+  var MAX_FILE = 3 * 1024 * 1024; // 3 MB per attachment
+
+  // demo/test accounts — auto-created on load if missing. Set SEED_DEMO = false to stop.
+  var SEED_DEMO = true;
+  var DEMO_USERS = [
+    { name: 'Test Admin',       email: 'admin@test.com',    pw: 'test1234', roles: ['admin'],       categories: [] },
+    { name: 'Test Director',    email: 'director@test.com', pw: 'test1234', roles: ['director'],    categories: [] },
+    { name: 'Test IT',          email: 'it@test.com',       pw: 'test1234', roles: ['management'],  categories: ['IT'] },
+    { name: 'Test Nursery PIC', email: 'nursery@test.com',  pw: 'test1234', roles: ['management'],  categories: ['Nursery'] },
+    { name: 'Test User',        email: 'user@test.com',     pw: 'test1234', roles: [],              categories: [] }
+  ];
+
+  // storage wrapper with graceful in-memory fallback
+  var mem = {};
+  var hasStore = (typeof window !== 'undefined') && window.storage && typeof window.storage.get === 'function';
+  async function loadAll() {
+    if (!hasStore) return mem[STORE_KEY] || [];
+    try {
+      var r = await window.storage.get(STORE_KEY, SHARED);
+      return r && r.value ? JSON.parse(r.value) : [];
+    } catch (e) { return []; }
+  }
+  async function saveAll(list) {
+    if (!hasStore) { mem[STORE_KEY] = list; return true; }
+    try { await window.storage.set(STORE_KEY, JSON.stringify(list), SHARED); return true; }
+    catch (e) { return false; }
+  }
+
+  /* ---------- users, session & auth ---------- */
+  var USERS_KEY = 'users';
+  var SESSION_KEY = 'proposal_session'; // per-device, localStorage
+  async function loadUsers() {
+    if (!hasStore) return mem[USERS_KEY] || [];
+    try {
+      var r = await window.storage.get(USERS_KEY, SHARED);
+      return r && r.value ? JSON.parse(r.value) : [];
+    } catch (e) { return []; }
+  }
+  async function saveUsers(list) {
+    if (!hasStore) { mem[USERS_KEY] = list; return true; }
+    try { await window.storage.set(USERS_KEY, JSON.stringify(list), SHARED); return true; }
+    catch (e) { return false; }
+  }
+  async function seedDemo() {
+    if (!SEED_DEMO) return;
+    var added = false;
+    for (var i = 0; i < DEMO_USERS.length; i++) {
+      var d = DEMO_USERS[i];
+      if (findUserByEmail(d.email)) continue;
+      var salt = randHex(8);
+      var passHash = await hashPw(d.pw, salt);
+      users.push({
+        id: 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5) + i,
+        name: d.name, email: d.email, roles: d.roles.slice(), categories: d.categories.slice(),
+        salt: salt, passHash: passHash, createdAt: Date.now()
+      });
+      added = true;
+    }
+    if (added) await saveUsers(users);
+  }
+
+  /* notifications */
+  var NOTES_KEY = 'notifications';
+  async function loadNotes() {
+    if (!hasStore) return mem[NOTES_KEY] || [];
+    try { var r = await window.storage.get(NOTES_KEY, SHARED); return r && r.value ? JSON.parse(r.value) : []; }
+    catch (e) { return []; }
+  }
+  async function saveNotes(list) {
+    if (!hasStore) { mem[NOTES_KEY] = list; return true; }
+    try { await window.storage.set(NOTES_KEY, JSON.stringify(list), SHARED); return true; }
+    catch (e) { return false; }
+  }
+  async function addNote(n) {
+    n.id = 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    n.readBy = [];
+    notes.unshift(n);
+    await saveNotes(notes);
+    renderAuth();
+  }
+  function relevantNotes(u) {
+    if (!u) return [];
+    return notes.filter(function (n) {
+      if (n.forUserId) return n.forUserId === u.id;
+      if (n.forRole === 'management') return hasCat(u, CAT_TO_MGMT[n.category] || n.category) || hasCat(u, 'IT') || canDirector(u);
+      return false;
+    });
+  }
+  function unreadCount(u) {
+    return relevantNotes(u).filter(function (n) { return (n.readBy || []).indexOf(u.id) === -1; }).length;
+  }
+  function getSession() { try { return window.localStorage.getItem(SESSION_KEY); } catch (e) { return null; } }
+  function setSession(id) {
+    try { if (id) window.localStorage.setItem(SESSION_KEY, id); else window.localStorage.removeItem(SESSION_KEY); } catch (e) {}
+  }
+  function resolveSession() {
+    var id = getSession();
+    currentUser = id ? (users.find(function (u) { return u.id === id; }) || null) : null;
+  }
+  function randHex(n) {
+    var a = new Uint8Array(n);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(a);
+    else for (var i = 0; i < n; i++) a[i] = Math.floor(Math.random() * 256);
+    return Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+  }
+  function simpleHash(str) {
+    var h = 5381, h2 = 52711, i;
+    for (i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+    for (i = str.length - 1; i >= 0; i--) h2 = ((h2 << 5) + h2 + str.charCodeAt(i)) >>> 0;
+    return ('00000000' + h.toString(16)).slice(-8) + ('00000000' + h2.toString(16)).slice(-8);
+  }
+  async function hashPw(pw, salt) {
+    var msg = salt + '|' + pw;
+    if (window.crypto && crypto.subtle && crypto.subtle.digest) {
+      try {
+        var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg));
+        return 'sha256:' + Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+      } catch (e) {}
+    }
+    return 'x:' + simpleHash(msg);
+  }
+  function findUserByEmail(email) {
+    email = (email || '').trim().toLowerCase();
+    return users.find(function (u) { return (u.email || '').toLowerCase() === email; }) || null;
+  }
+
+  /* permissions — users can hold more than one role */
+  var ROLE_OPTS = [['management', 'Management Team'], ['director', 'Director'], ['admin', 'Administrator']];
+  function getRoles(u) {
+    if (!u) return [];
+    if (Array.isArray(u.roles)) return u.roles;
+    if (u.role === 'admin') return ['admin'];
+    if (u.role === 'management') return ['management'];
+    if (u.role === 'director') return ['director'];
+    return []; // normal user
+  }
+  function hasRole(u, r) { return getRoles(u).indexOf(r) !== -1; }
+  function isAdmin(u) { return hasRole(u, 'admin'); }
+  function isManagement(u) { return hasRole(u, 'management'); }
+  function isDirector(u) { return hasRole(u, 'director'); }
+  function canDirector(u) { return isAdmin(u) || isDirector(u); }
+  function normalizeUsers() {
+    users.forEach(function (u) {
+      if (!Array.isArray(u.roles)) u.roles = getRoles(u);
+      delete u.role;
+      if (u.categories && u.categories.indexOf('Director') !== -1) { // Director is a role now, not an area
+        if (u.roles.indexOf('director') === -1) u.roles.push('director');
+        u.categories = u.categories.filter(function (c) { return c !== 'Director'; });
+      }
+    });
+  }
+  function roleLabel(r) {
+    if (r === 'admin') return 'Administrator';
+    if (r === 'management') return 'Management Team';
+    if (r === 'director') return 'Director';
+    return 'Normal User';
+  }
+  function userRolesLabel(u) {
+    var rs = getRoles(u);
+    return rs.length ? rs.map(roleLabel).join(' · ') : 'Normal User';
+  }
+  function describeUser(u) {
+    if (isAdmin(u)) return 'Full access, plus manage everyone’s roles and access.';
+    var parts = [];
+    if (isManagement(u)) parts.push('approve as PIC / IT for the areas assigned below');
+    if (isDirector(u)) parts.push('give the Director sign-off on approvals');
+    if (!parts.length) return 'Submit proposals, run technical review, build & test, and deploy.';
+    return parts.join('; ') + '. Can also submit and run build & test.';
+  }
+  function catHas(u, c) {
+    var cats = u && u.categories || [];
+    return cats.indexOf('*') !== -1 || cats.indexOf(c) !== -1;
+  }
+  function hasCat(u, c) {
+    if (isAdmin(u)) return true;
+    if (!isManagement(u)) return false;
+    return catHas(u, c);
+  }
+  function isManagementFor(u, category) { return hasCat(u, category); }
+
+  // An approval gate needs three sign-offs: the category PIC, IT, and Director.
+  function picCat(p) { return (p && (CAT_TO_MGMT[p.category] || p.category)) || ''; }
+  function slotLabel(s, p) {
+    if (s === 'it') return 'IT';
+    if (s === 'director') return 'Director';
+    var pc = picCat(p);
+    return 'PIC' + (pc ? ' (' + pc + ')' : '');
+  }
+  function requiredSlots(p) {
+    var pc = picCat(p);
+    var out = [];
+    if (pc && pc !== 'IT' && pc !== 'Director') out.push('pic');
+    out.push('it', 'director');
+    return out;
+  }
+  function eligibleSlots(u, p) {
+    var out = [];
+    if (!u) return out;
+    if (p.submittedBy && p.submittedBy === u.id) return out; // can't approve your own proposal
+    var pc = picCat(p);
+    if (pc && pc !== 'IT' && pc !== 'Director' && hasCat(u, pc)) out.push('pic');
+    if (hasCat(u, 'IT')) out.push('it');
+    if (canDirector(u)) out.push('director');
+    return out;
+  }
+  function canApproveGate(u, p) { return eligibleSlots(u, p).length > 0; }
+
+  function actorTag() { return currentUser ? ' by ' + currentUser.name : ''; }
+  function canMove(p, act) {
+    if (!currentUser) return false;
+    if (act === 'reject' || act === 'reopen') return canApproveGate(currentUser, p);
+    var active = STAGES[p.done + 1];
+    if ((act === 'adv' || act === 'back') && active && active.type === 'gate') {
+      return canApproveGate(currentUser, p); // gate: PIC/IT/Director only, and not the proposer
+    }
+    return true; // non-gate step / milestone: any logged-in user
+  }
+  function loginPrompt(msg) {
+    return '<span class="hint">' + esc(msg) + '</span> <button class="btn btn-ghost btn-sm" data-auth="login">Log in</button>';
+  }
+
+  var data = [];
+  var users = [];
+  var notes = [];
+  var currentUser = null;
+  var query = '';
+  var summarizing = {};
+  var openTesters = {};
+  var modalMode = null;   // 'sop' | 'form' | 'detail' | 'auth' | 'settings'
+  var detailId = null;
+  var sopIdx = null;
+
+  var el = function (id) { return document.getElementById(id); };
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function fmt(ts) {
+    return new Date(ts).toLocaleString('en-US', {
+      month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true
+    });
+  }
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+  function uid() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+  function statusOf(p) {
+    if (p.status === 'rejected') return 'rejected';
+    if (p.done >= STAGES.length - 1) return 'live';
+    var active = p.done + 1;
+    return STAGES[active].type === 'gate' ? 'gate' : 'active';
+  }
+  function statusPill(p) {
+    var s = statusOf(p);
+    if (s === 'live') return { label: 'Live', cls: 'pill-live' };
+    if (s === 'rejected') return { label: 'Rejected', cls: 'pill-stop' };
+    var active = STAGES[p.done + 1];
+    if (s === 'gate') return { label: 'Pending ' + active.name, cls: 'pill-gate' };
+    return { label: 'In ' + active.name, cls: 'pill-active' };
+  }
+  function submitter(p) { return p.email || p.proposer || p.submitter || 'Unknown'; }
+
+  function toast(msg) {
+    var t = el('toast');
+    t.textContent = msg; t.className = 'toast show';
+    clearTimeout(t._t); t._t = setTimeout(function () { t.className = 'toast'; }, 2600);
+  }
+
+  /* ---------- hero rail ---------- */
+  function renderRail() {
+    el('rail').innerHTML = STAGES.map(function (st, i) {
+      return '<button class="rnode" data-sop="' + i + '">' +
+        '<span class="ico">' + ICONS[st.icon] + '</span>' +
+        '<span class="rname">' + esc(st.name) + '</span>' +
+        '<span class="rteam">' + esc(st.team) + '</span>' +
+      '</button>';
+    }).join('');
+  }
+
+  /* ---------- list ---------- */
+  function matches(p) {
+    if (!query) return true;
+    var hay = [p.title, p.proposer, p.email, p.objective, p.proposerDept].join(' ').toLowerCase();
+    return hay.indexOf(query) !== -1;
+  }
+  function render() {
+    el('count').textContent = data.length + ' total';
+    var list = data.filter(matches);
+    var box = el('plist');
+    if (!data.length) {
+      box.innerHTML = '<div class="empty"><p>No proposals yet — click “+ New proposal” to add the first one.</p></div>';
+      return;
+    }
+    if (!list.length) { box.innerHTML = '<div class="empty"><p>Nothing matches your search.</p></div>'; return; }
+    box.innerHTML = list.map(function (p) {
+      var pill = statusPill(p);
+      return '<div class="row">' +
+        '<div class="grow">' +
+          '<p class="p-title">' + esc(p.title) + '</p>' +
+          '<span class="pill ' + pill.cls + '"><span class="dot"></span>' + esc(pill.label) + '</span>' +
+        '</div>' +
+        '<button class="viewbtn" data-view="' + p.id + '">View</button>' +
+        '<div class="meta">submitted by<br><span class="who">' + esc(submitter(p)) + '</span><br>' + fmt(p.createdAt) + '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  /* ---------- modal plumbing ---------- */
+  function openModal(html, cls) {
+    var m = el('modal');
+    m.className = 'modal' + (cls ? ' ' + cls : '');
+    m.innerHTML = html;
+    el('backdrop').className = 'backdrop show' + (cls === 'auth' ? ' light' : '');
+  }
+  function closeModal() {
+    if (gated) return; // login card can't be dismissed
+    el('backdrop').className = 'backdrop';
+    el('modal').innerHTML = '';
+    modalMode = null; detailId = null; sopIdx = null;
+  }
+
+  /* ---------- SOP modal ---------- */
+  function showSop(i) {
+    modalMode = 'sop'; sopIdx = i;
+    var st = STAGES[i];
+    var items = st.sop.map(function (line) { return '<li>' + esc(line) + '</li>'; }).join('');
+    openModal(
+      '<div class="modal-head">' +
+        '<div><p class="sop-eyebrow">Step ' + pad2(i + 1) + ' · ' + esc(st.team) + '</p>' +
+        '<div class="sop-title"><span class="ico">' + ICONS[st.icon] + '</span><h2>' + esc(st.name) + '</h2></div></div>' +
+        '<button class="xbtn" data-close="1">×</button>' +
+      '</div>' +
+      '<div class="modal-body">' +
+        '<p class="sop-sub">Standard operating procedure</p>' +
+        '<ol class="sop-list">' + items + '</ol>' +
+      '</div>');
+  }
+
+  /* ---------- new proposal form ---------- */
+  function showForm() {
+    modalMode = 'form';
+    var cats = CATEGORIES.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
+    openModal(
+      '<div class="modal-head"><h2 class="d-title" style="margin:0">New proposal</h2>' +
+      '<button class="xbtn" data-close="1">×</button></div>' +
+      '<div class="modal-body">' +
+        '<div class="grid2">' +
+          fld('f-proposer', 'Proposer', 'e.g. Aisha Tan', true, 60) +
+          fld('f-email', 'Your email', 'e.g. name@company.com', false, 80, 'email') +
+        '</div>' +
+        '<div class="grid2">' +
+          fld('f-proposerdept', 'Proposer’s department', 'e.g. Human Resources', false, 60) +
+          fld('f-deptinvolved', 'Department(s) involved', 'e.g. HR, IT, Finance', false, 100) +
+        '</div>' +
+        fld('f-title', 'Project title', 'e.g. Leave request portal', true, 80) +
+        '<div class="field"><label for="f-category">Category of proposal <span class="req">*</span></label>' +
+          '<select id="f-category" style="max-width:340px"><option value="" selected disabled>Select a category…</option>' + cats + '</select>' +
+          '<div class="err" id="e-f-category"></div></div>' +
+        ta('f-objective', 'Objective', 'What is this project meant to achieve?', true, 2, 500) +
+        ta('f-problem', 'Current issue / problem faced', 'What isn’t working today? Who does it affect, and how?', false, 3, 800) +
+        ta('f-tools', 'Planned tools / tech', 'Tools, platforms or frameworks you plan to use (e.g. Google Sheets, Power Automate, a web app). Helps IT review feasibility.', false, 2, 500) +
+        '<p class="sec-l" style="margin-top:4px">Cost &amp; return</p>' +
+        '<div class="grid2">' +
+          fldNum('f-investment', 'Cost investment (RM)', 'e.g. 12000 — subscription, licences') +
+          fldNum('f-returns', 'Return / benefit (RM)', 'e.g. 30000 — annual cost saving') +
+        '</div>' +
+        '<div class="field"><label for="f-roi">ROI (auto-calculated)</label>' +
+          '<input id="f-roi" type="text" value="—" readonly style="max-width:220px;background:#f4f5f8;font-weight:700" />' +
+          '<div class="hint">ROI = Net return ÷ Cost of investment × 100%.</div></div>' +
+        '<div class="field"><label>Attachments <span class="hint" style="font-weight:500">(optional — up to 2 files or images, max 3 MB each)</span></label>' +
+          '<input id="f-file1" type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" style="margin-bottom:8px" />' +
+          '<input id="f-file2" type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" /></div>' +
+        '<div class="actions-row" style="margin-top:8px">' +
+          '<button class="btn btn-primary" id="submit-btn">Submit proposal</button>' +
+          '<button class="btn btn-ghost" data-close="1">Cancel</button>' +
+        '</div>' +
+      '</div>');
+    el('submit-btn').onclick = submitProposal;
+    var recompute = function () {
+      var roi = calcRoi(el('f-investment').value, el('f-returns').value);
+      el('f-roi').value = roi === null ? '—' : roi + '%';
+    };
+    el('f-investment').addEventListener('input', recompute);
+    el('f-returns').addEventListener('input', recompute);
+    if (currentUser) {
+      el('f-proposer').value = currentUser.name || '';
+      el('f-email').value = currentUser.email || '';
+    }
+  }
+  function fld(id, label, ph, req, max, type) {
+    return '<div class="field"><label for="' + id + '">' + esc(label) + (req ? ' <span class="req">*</span>' : '') + '</label>' +
+      '<input id="' + id + '" type="' + (type || 'text') + '" placeholder="' + esc(ph) + '" maxlength="' + max + '" />' +
+      (req ? '<div class="err" id="e-' + id + '"></div>' : '') + '</div>';
+  }
+  function ta(id, label, ph, req, rows, max) {
+    return '<div class="field"><label for="' + id + '">' + esc(label) + (req ? ' <span class="req">*</span>' : '') + '</label>' +
+      '<textarea id="' + id + '" rows="' + rows + '" placeholder="' + esc(ph) + '" maxlength="' + max + '"></textarea>' +
+      (req ? '<div class="err" id="e-' + id + '"></div>' : '') + '</div>';
+  }
+  function fldNum(id, label, ph) {
+    return '<div class="field"><label for="' + id + '">' + esc(label) + '</label>' +
+      '<input id="' + id + '" type="number" min="0" step="0.01" inputmode="decimal" placeholder="' + esc(ph) + '" /></div>';
+  }
+  function calcRoi(inv, ret) {
+    inv = parseFloat(inv); ret = parseFloat(ret);
+    if (!isFinite(inv) || inv <= 0 || !isFinite(ret)) return null;
+    return Math.round((ret / inv) * 1000) / 10; // ROI % = net return ÷ cost of investment, 1 decimal
+  }
+  function readFile(input) {
+    return new Promise(function (resolve, reject) {
+      var f = input && input.files && input.files[0];
+      if (!f) return resolve(null);
+      if (f.size > MAX_FILE) return reject(new Error('“' + f.name + '” is over 3 MB — please attach a smaller file.'));
+      var r = new FileReader();
+      r.onload = function () { resolve({ name: f.name, type: f.type, dataUrl: r.result }); };
+      r.onerror = function () { reject(new Error('Could not read “' + f.name + '”.')); };
+      r.readAsDataURL(f);
+    });
+  }
+  async function submitProposal() {
+    if (!currentUser) { toast('Please log in first'); showAuth('login'); return; }
+    var proposer = el('f-proposer').value.trim();
+    var title = el('f-title').value.trim();
+    var objective = el('f-objective').value.trim();
+    var category = el('f-category').value;
+    var ok = true;
+    el('e-f-proposer').textContent = proposer ? '' : (ok = false, 'Please enter the proposer name.');
+    el('e-f-title').textContent = title ? '' : (ok = false, 'Please give the project a title.');
+    el('e-f-category').textContent = category ? '' : (ok = false, 'Please choose a category.');
+    el('e-f-objective').textContent = objective ? '' : (ok = false, 'Please state the objective.');
+    if (!ok) return;
+
+    var btn = el('submit-btn'); btn.disabled = true; btn.textContent = 'Saving…';
+    var files = [];
+    try {
+      var f1 = await readFile(el('f-file1'));
+      var f2 = await readFile(el('f-file2'));
+      if (f1) files.push(f1);
+      if (f2) files.push(f2);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Submit proposal';
+      toast(e && e.message ? e.message : 'Could not read the attachment');
+      return;
+    }
+
+    var investment = parseFloat(el('f-investment').value);
+    var returns = parseFloat(el('f-returns').value);
+    var p = {
+      id: uid(), title: title,
+      proposer: proposer,
+      email: el('f-email').value.trim(),
+      proposerDept: el('f-proposerdept').value.trim(),
+      deptInvolved: el('f-deptinvolved').value.trim(),
+      category: category,
+      objective: objective,
+      problem: el('f-problem').value.trim(),
+      tools: el('f-tools').value.trim(),
+      investment: isFinite(investment) ? investment : null,
+      returns: isFinite(returns) ? returns : null,
+      roi: calcRoi(el('f-investment').value, el('f-returns').value),
+      attachments: files,
+      submittedBy: currentUser.id,
+      done: 0, status: 'active',
+      createdAt: Date.now(), updatedAt: Date.now(),
+      evaluations: [],
+      history: [{ at: Date.now(), label: 'Proposal submitted', note: '' }]
+    };
+    data.unshift(p);
+    await saveAll(data);
+    await addNote({
+      kind: 'submitted', proposalId: p.id, proposalTitle: p.title, category: p.category,
+      forRole: 'management', message: 'New proposal awaiting approval — arrange a meeting', at: Date.now()
+    });
+    query = ''; el('search').value = '';
+    closeModal();
+    render();
+    toast('Proposal submitted — Management notified');
+  }
+
+  /* ---------- detail modal ---------- */
+  function progressRail(p) {
+    var stopped = p.status === 'rejected';
+    var stopAt = stopped ? p.done + 1 : -1;
+    return '<div class="prail">' + STAGES.map(function (st, i) {
+      var cls = 'pn', inner = (i + 1);
+      var isGate = st.type === 'gate';
+      if (i <= p.done) {
+        cls += ' done';
+        if (i === STAGES.length - 1) cls += ' livedone';
+        inner = '&#10003;';
+      } else if (i === stopAt) {
+        cls += ' stopped'; inner = '&#10005;';
+      } else if (i === p.done + 1 && !stopped) {
+        cls += ' active' + (isGate ? ' gate-active' : '');
+      }
+      var dotCls = 'pdot' + (isGate ? ' gate' : '');
+      return '<div class="' + cls + '"><div class="seg"></div>' +
+        '<div class="' + dotCls + '"><span>' + inner + '</span></div>' +
+        '<div class="plabel">' + esc(st.name) + '</div></div>';
+    }).join('') + '</div>';
+  }
+  function fieldBlk(label, val) {
+    if (!val) return '';
+    return '<p class="sec-l">' + label + '</p><p class="desc">' + esc(val) + '</p>';
+  }
+  function backBtn(p) {
+    return (p.done > 0 && canMove(p, 'back'))
+      ? '<button class="btn btn-ghost btn-sm" data-act="back" data-id="' + p.id + '">Send back a stage</button>' : '';
+  }
+  function actionsHTML(p) {
+    if (!currentUser) return '<div class="actions-row">' + loginPrompt('Log in to move this proposal.') + '</div>';
+    var cat = p.category || 'this category';
+    if (p.status === 'rejected') {
+      if (!canApproveGate(currentUser, p)) {
+        return '<div class="actions-row"><span class="hint">Rejected. Only an approver for ' + esc(cat) + ' (PIC, IT or Director) can reopen it.</span></div>';
+      }
+      return '<div class="actions-row"><button class="btn btn-ghost btn-sm" data-act="reopen" data-id="' + p.id + '">Reopen proposal</button></div>';
+    }
+    if (p.done >= STAGES.length - 1) {
+      return '<div class="actions-row"><span class="hint">This system is live. Track ongoing work in the maintenance phase.</span></div>';
+    }
+    var active = STAGES[p.done + 1];
+    var nextName = STAGES[p.done + 2] ? STAGES[p.done + 2].name : 'next';
+    if (active.type === 'gate') return gatePanelHTML(p);
+    var html = '';
+    if (active.type === 'milestone') {
+      html += '<button class="btn btn-primary btn-sm" data-act="adv" data-id="' + p.id + '">Mark as live</button>';
+    } else {
+      html += '<button class="btn btn-primary btn-sm" data-act="adv" data-id="' + p.id + '">Complete &rarr; ' + esc(nextName) + '</button>';
+    }
+    return '<div class="actions-row">' + html + backBtn(p) + '</div>';
+  }
+  function gatePanelHTML(p) {
+    var active = STAGES[p.done + 1];
+    var gate = String(p.done + 1);
+    var req = requiredSlots(p);
+    var g = (p.approvals && p.approvals[gate]) || {};
+    var doneCount = req.filter(function (s) { return g[s]; }).length;
+    var pctW = req.length ? Math.round(doneCount / req.length * 100) : 0;
+    var nodes = req.map(function (s) {
+      var a = g[s]; var done = !!a;
+      return '<div class="apv-node' + (done ? ' done' : '') + '">' +
+        '<div class="apv-ic">' + (done ? '&#10003;' : '') + '</div>' +
+        '<div class="apv-lbl">' + esc(slotLabel(s, p)) + '</div>' +
+        '<div class="apv-who">' + (done ? esc(a.by) : 'Pending') + '</div></div>';
+    }).join('');
+    var html = '<div class="apv-prog">' +
+      '<div class="apv-top"><span class="apv-title">' + esc(active.name) + ' sign-off</span>' +
+      '<span class="apv-count">' + doneCount + ' / ' + req.length + ' approved</span></div>' +
+      '<div class="apv-track"><span class="apv-fill" style="width:' + pctW + '%"></span></div>' +
+      '<div class="apv-nodes">' + nodes + '</div></div>';
+    var isSubmitter = p.submittedBy && currentUser && p.submittedBy === currentUser.id;
+    if (canApproveGate(currentUser, p)) {
+      var mine = eligibleSlots(currentUser, p).filter(function (s) { return req.indexOf(s) !== -1 && !g[s]; });
+      var btns = mine.length
+        ? '<button class="btn btn-primary btn-sm" data-act="approve" data-id="' + p.id + '">Approve as ' + mine.map(function (s) { return esc(slotLabel(s, p)); }).join(' + ') + '</button>'
+        : '<span class="hint">You’ve approved &mdash; waiting on the remaining sign-off.</span>';
+      html += '<div class="actions-row">' + btns +
+        '<button class="btn btn-stop btn-sm" data-act="reject" data-id="' + p.id + '">Reject</button>' + backBtn(p) + '</div>';
+    } else if (isSubmitter) {
+      html += '<div class="actions-row"><span class="hint">You submitted this proposal, so you can’t approve it &mdash; waiting on ' + req.map(function (s) { return esc(slotLabel(s, p)); }).join(', ') + '.</span></div>';
+    } else {
+      html += '<div class="actions-row"><span class="hint">Awaiting ' + esc(active.name) + ' &mdash; needs sign-off from ' + req.map(function (s) { return esc(slotLabel(s, p)); }).join(', ') + '.</span></div>';
+    }
+    return html;
+  }
+  function pct(n, total) { return total ? Math.round(n / total * 100) : 0; }
+  function ratingTag(v) {
+    var m = { good: ['r-good', 'Good'], okay: ['r-okay', 'Okay'], poor: ['r-poor', 'Bad'] };
+    var x = m[v] || m.okay;
+    return '<span class="rtag ' + x[0] + '">' + x[1] + '</span>';
+  }
+  function evalStatsHTML(p) {
+    var evs = p.evaluations || [];
+    if (!evs.length) return '';
+    var rows = EVAL_CRITERIA.map(function (c, i) {
+      var g = 0, o = 0, b = 0;
+      evs.forEach(function (ev) {
+        var r = ev.ratings && ev.ratings[i];
+        if (r === 'good') g++; else if (r === 'okay') o++; else if (r === 'poor') b++;
+      });
+      var total = g + o + b;
+      var gp = pct(g, total), op = pct(o, total), bp = pct(b, total);
+      var nums = total ? (gp + '% good &middot; ' + op + '% okay &middot; ' + bp + '% bad') : 'no ratings yet';
+      return '<div class="pct-row">' +
+        '<div class="pct-top"><span class="ev-cn">' + esc(c) + '</span><span class="pct-nums">' + nums + '</span></div>' +
+        '<div class="pct-bar"><span class="seg-good" style="width:' + gp + '%"></span>' +
+          '<span class="seg-okay" style="width:' + op + '%"></span>' +
+          '<span class="seg-bad" style="width:' + bp + '%"></span></div></div>';
+    }).join('');
+    return '<p class="sec-l">Ratings summary (' + evs.length + ' tester' + (evs.length === 1 ? '' : 's') + ')</p>' + rows;
+  }
+  function evalTestersHTML(p) {
+    var evs = p.evaluations || [];
+    if (!evs.length) return '';
+    var items = evs.map(function (ev, idx) {
+      var key = p.id + ':' + idx;
+      var open = !!openTesters[key];
+      var name = ev.tester || ('Tester ' + (idx + 1));
+      var detail = '';
+      if (open) {
+        var chips = EVAL_CRITERIA.map(function (c, i) {
+          var r = ev.ratings && ev.ratings[i];
+          if (!r) return '';
+          return '<div class="ev-crit"><span class="ev-cn">' + esc(c) + '</span>' + ratingTag(r) + '</div>';
+        }).join('');
+        detail = '<div class="tester-detail"><span class="ev-when">' + fmt(ev.at) + '</span>' +
+          (chips ? '<div class="ev-crits" style="margin-top:8px">' + chips + '</div>' : '') +
+          (ev.comment ? '<p class="ev-comment">' + esc(ev.comment) + '</p>' : '<p class="hint" style="margin-top:8px">No written comment.</p>') +
+          '</div>';
+      }
+      return '<div class="tester' + (open ? ' open' : '') + '">' +
+        '<button class="tester-name" data-act="tester" data-id="' + p.id + '" data-idx="' + idx + '">' +
+        '<span class="tcaret">' + (open ? '&#9662;' : '&#9656;') + '</span>' + esc(name) + '</button>' +
+        detail + '</div>';
+    }).join('');
+    return '<p class="sec-l">Testers &mdash; click a name to view their result</p>' +
+      '<div class="tester-list">' + items + '</div>';
+  }
+  function evalSummaryHTML(p) {
+    var evs = p.evaluations || [];
+    if (!evs.length) return '';
+    var busy = summarizing[p.id];
+    var s = p.evalSummary;
+    var stale = s && s.count !== evs.length;
+    var out = '';
+    if (s) {
+      out += '<div class="ev-summary"><p class="ev-sum-head">AI summary <span class="ev-sum-meta">based on ' +
+        s.count + ' evaluation' + (s.count === 1 ? '' : 's') + '</span></p>' +
+        '<div class="ev-sum-body">' + esc(s.text).replace(/\n/g, '<br>') + '</div>' +
+        (stale ? '<p class="ev-sum-stale">' + (evs.length - s.count) + ' new since this summary &mdash; regenerate to include them.</p>' : '') +
+        '</div>';
+    }
+    var label = busy ? 'Summarizing&hellip;' : (s ? 'Regenerate summary' : 'Summarize all feedback');
+    out += '<button class="btn btn-ghost btn-sm" data-act="summ" data-id="' + p.id + '"' + (busy ? ' disabled' : '') + '>' + label + '</button>';
+    return out;
+  }
+  function evalFormHTML(p) {
+    var crits = EVAL_CRITERIA.map(function (c, i) {
+      var opts = RATINGS.map(function (r) {
+        var id = 'ev-' + p.id + '-' + i + '-' + r.v;
+        return '<label class="ropt ropt-' + r.v + '" for="' + id + '">' +
+          '<input type="radio" name="ev-' + p.id + '-' + i + '" id="' + id + '" value="' + r.v + '" />' + r.label + '</label>';
+      }).join('');
+      return '<div class="ev-row"><span class="ev-cn">' + esc(c) + '</span><span class="ev-opts">' + opts + '</span></div>';
+    }).join('');
+    return '<div class="ev-form">' +
+      '<div class="field"><label for="ev-name-' + p.id + '">Your name (optional)</label>' +
+      '<input id="ev-name-' + p.id + '" type="text" placeholder="e.g. tester from HR" maxlength="60" /></div>' +
+      '<div class="ev-grid">' + crits + '</div>' +
+      '<div class="field" style="margin:12px 0"><label for="ev-comment-' + p.id + '">Feedback / comments</label>' +
+      '<textarea id="ev-comment-' + p.id + '" rows="3" placeholder="What worked well? What needs fixing?" maxlength="600"></textarea></div>' +
+      '<button class="btn btn-primary btn-sm" data-act="eval" data-id="' + p.id + '">Submit evaluation</button></div>';
+  }
+  function evalSection(p) {
+    var isTesting = (p.status !== 'rejected') && (p.done + 1 === TESTING_STAGE);
+    var hasEvals = (p.evaluations || []).length > 0;
+    if (!isTesting && !hasEvals) return '';
+    var body = '<p class="sec-l">User testing &amp; evaluation</p>';
+    if (isTesting) {
+      if (currentUser) {
+        body += '<p class="hint" style="margin-bottom:6px">This system is in build &amp; test. Testers rate it below and leave feedback.</p>' + evalFormHTML(p);
+      } else {
+        body += '<p class="hint" style="margin-bottom:6px">This system is in build &amp; test. ' + loginPrompt('Log in to rate it and leave feedback.') + '</p>';
+      }
+    }
+    body += evalStatsHTML(p) + evalSummaryHTML(p) + evalTestersHTML(p);
+    return '<div class="ev-wrap">' + body + '</div>';
+  }
+  function showDetail(id) {
+    var p = data.find(function (x) { return x.id === id; });
+    if (!p) return;
+    modalMode = 'detail'; detailId = id;
+    var pill = statusPill(p);
+    var rows = (p.history || []).slice().reverse().map(function (h) {
+      return '<li><span class="h-when">' + fmt(h.at) + '</span><span class="h-what grow2"><b>' +
+        esc(h.label) + '</b>' + (h.note ? ' &middot; <span class="h-note">' + esc(h.note) + '</span>' : '') + '</span></li>';
+    }).join('');
+
+    var money = function (v) { return (v === 0 || v) ? 'RM ' + Number(v).toLocaleString('en-US') : '—'; };
+    var cost = '';
+    if (p.investment != null || p.returns != null || p.roi != null) {
+      cost = '<p class="sec-l">Cost &amp; return</p><p class="desc">' +
+        'Cost investment: <b>' + money(p.investment) + '</b><br>' +
+        'Return / benefit: <b>' + money(p.returns) + '</b><br>' +
+        'ROI: <b>' + (p.roi == null ? '—' : p.roi + '%') + '</b></p>';
+    }
+
+    var atts = p.attachments || (p.attachment ? [{ name: p.attachment, type: '', dataUrl: p.attachment, link: true }] : []);
+    var attach = '';
+    if (atts.length) {
+      attach = '<p class="sec-l">Attachments</p><div class="att-list">' + atts.map(function (a) {
+        var isImg = a.type && a.type.indexOf('image/') === 0;
+        if (isImg) {
+          return '<a class="att" href="' + esc(a.dataUrl) + '" target="_blank" rel="noopener">' +
+            '<img src="' + esc(a.dataUrl) + '" alt="' + esc(a.name) + '" />' +
+            '<span>' + esc(a.name) + '</span></a>';
+        }
+        return '<a class="att-file" href="' + esc(a.dataUrl) + '" target="_blank" rel="noopener"' +
+          (a.link ? '' : ' download="' + esc(a.name) + '"') + '>' + esc(a.name || 'Attachment') + '</a>';
+      }).join('') + '</div>';
+    }
+
+    var info =
+      fieldBlk('Departments involved', p.deptInvolved) +
+      fieldBlk('Objective', p.objective) +
+      fieldBlk('Current issue / problem', p.problem) +
+      fieldBlk('Planned tools / tech', p.tools) +
+      fieldBlk('Content of the system', p.content) +
+      fieldBlk('Outcome hoped for', p.outcome) +
+      fieldBlk('Expected benefit', p.benefit) +
+      cost +
+      attach +
+      (p.desc ? '<p class="sec-l">Details</p><p class="desc">' + esc(p.desc) + '</p>' : '');
+
+    var meetActive = STAGES[p.done + 1];
+    var meetingBox = p.meeting
+      ? '<div class="meet-box">&#128197; <b>' + esc(p.meeting.stage || 'Approval') + ' meeting</b> &middot; ' + fmt(p.meeting.at) +
+        (p.meeting.note ? ' &middot; ' + esc(p.meeting.note) : '') +
+        '<span class="meet-by"> &middot; set by ' + esc(p.meeting.by || '') + '</span></div>'
+      : '';
+    var canArrange = p.status !== 'rejected' && meetActive && meetActive.type === 'gate' && canMove(p, 'adv');
+    var arrangeHTML = canArrange
+      ? '<div class="meet-form"><p class="sec-l" style="margin-top:0">Arrange ' + esc(meetActive.name) + ' meeting</p>' +
+        '<div class="grid2">' +
+          '<div class="field"><label for="meet-' + p.id + '">Date &amp; time</label><input id="meet-' + p.id + '" type="datetime-local" /></div>' +
+          '<div class="field"><label for="meetnote-' + p.id + '">Note (optional)</label><input id="meetnote-' + p.id + '" type="text" maxlength="160" placeholder="e.g. venue, Zoom link, agenda" /></div>' +
+        '</div>' +
+        '<button class="btn btn-ghost btn-sm" data-act="meet" data-id="' + p.id + '">Save and invite the meeting</button></div>'
+      : '';
+    openModal(
+      '<div class="modal-head"><div>' +
+        '<h2 class="d-title">' + esc(p.title) + '</h2>' +
+        '<span class="pill ' + pill.cls + '"><span class="dot"></span>' + esc(pill.label) + '</span>' +
+      '</div><button class="xbtn" data-close="1">×</button></div>' +
+      '<div class="modal-body">' +
+        '<p class="d-meta">submitted by <b>' + esc(submitter(p)) + '</b> &middot; ' + fmt(p.createdAt) +
+          (p.category ? ' &middot; ' + esc(p.category) : '') + '</p>' +
+        progressRail(p) +
+        info +
+        meetingBox +
+        arrangeHTML +
+        evalSection(p) +
+        '<p class="sec-l">Move this proposal</p>' +
+        '<div class="note-in"><input type="text" placeholder="Add a note (optional)" id="note-' + p.id + '" maxlength="160" /></div>' +
+        actionsHTML(p) +
+        '<p class="sec-l">Activity</p><ul class="history">' + rows + '</ul>' +
+      '</div>', 'wide');
+  }
+  function refreshDetail() { if (modalMode === 'detail' && detailId) showDetail(detailId); }
+
+  /* ---------- mutations ---------- */
+  async function commit() { await saveAll(data); render(); refreshDetail(); }
+  function logNote(p) {
+    var inp = el('note-' + p.id);
+    return inp && inp.value.trim() ? inp.value.trim() : '';
+  }
+  function denied() { toast('You don’t have permission for this action'); }
+  async function advance(p) {
+    if (!canMove(p, 'adv')) return denied();
+    var note = logNote(p);
+    var wasGate = STAGES[p.done + 1] && STAGES[p.done + 1].type === 'gate';
+    p.done += 1;
+    var reached = STAGES[p.done];
+    var label = p.done >= STAGES.length - 1 ? 'System went live'
+      : ((wasGate ? 'Approved' : (reached.name + ' completed')) + actorTag());
+    p.history.push({ at: Date.now(), label: label, note: note });
+    p.updatedAt = Date.now();
+    await commit();
+    toast(p.done >= STAGES.length - 1 ? 'Marked as live' : 'Moved to next stage');
+  }
+  async function sendBack(p) {
+    if (!canMove(p, 'back')) return denied();
+    var note = logNote(p);
+    if (p.done > 0) p.done -= 1;
+    p.approvals = {};
+    p.history.push({ at: Date.now(), label: 'Sent back to ' + STAGES[p.done].name + actorTag(), note: note });
+    p.updatedAt = Date.now();
+    await commit(); toast('Sent back a stage');
+  }
+  async function reject(p) {
+    if (!canMove(p, 'reject')) return denied();
+    var note = logNote(p);
+    p.status = 'rejected';
+    p.approvals = {};
+    p.history.push({ at: Date.now(), label: 'Rejected at ' + STAGES[p.done + 1].name + actorTag(), note: note });
+    p.updatedAt = Date.now();
+    await commit(); toast('Proposal rejected');
+  }
+  async function reopen(p) {
+    if (!canMove(p, 'reopen')) return denied();
+    p.status = 'active';
+    p.approvals = {};
+    p.history.push({ at: Date.now(), label: 'Reopened' + actorTag(), note: '' });
+    p.updatedAt = Date.now();
+    await commit(); toast('Proposal reopened');
+  }
+  async function approveGate(p) {
+    if (!canApproveGate(currentUser, p)) return denied();
+    var active = STAGES[p.done + 1];
+    if (!active || active.type !== 'gate') return;
+    var gate = String(p.done + 1);
+    var req = requiredSlots(p);
+    p.approvals = p.approvals || {};
+    var g = p.approvals[gate] = p.approvals[gate] || {};
+    var mine = eligibleSlots(currentUser, p).filter(function (s) { return req.indexOf(s) !== -1 && !g[s]; });
+    if (!mine.length) { toast('You’ve already recorded your approval here'); return; }
+    mine.forEach(function (s) { g[s] = { by: currentUser.name, byId: currentUser.id, at: Date.now() }; });
+    var complete = req.every(function (s) { return g[s]; });
+    if (complete) {
+      p.done += 1;
+      delete p.approvals[gate];
+      p.history.push({ at: Date.now(), label: active.name + ' fully approved — moved to ' + STAGES[p.done].name, note: '' });
+      if (p.submittedBy) {
+        await addNote({ kind: 'approved', proposalId: p.id, proposalTitle: p.title, category: p.category, forUserId: p.submittedBy, message: active.name + ' passed — now at ' + STAGES[p.done].name, at: Date.now() });
+      }
+    } else {
+      p.history.push({ at: Date.now(), label: active.name + ' — approval recorded (' + mine.map(function (s) { return slotLabel(s, p); }).join(', ') + ')' + actorTag(), note: logNote(p) });
+    }
+    p.updatedAt = Date.now();
+    await commit();
+    toast(complete ? 'Fully approved — moved to next stage' : 'Your approval recorded');
+  }
+  async function arrangeMeeting(p) {
+    if (!canMove(p, 'adv')) return denied();
+    var active = STAGES[p.done + 1];
+    var dt = el('meet-' + p.id); var when = dt ? dt.value : '';
+    if (!when) { toast('Pick a date and time for the meeting'); return; }
+    var ts = new Date(when).getTime();
+    if (!isFinite(ts)) { toast('That date doesn’t look right'); return; }
+    var noteEl = el('meetnote-' + p.id); var mnote = noteEl ? noteEl.value.trim() : '';
+    p.meeting = { at: ts, note: mnote, stage: active.name, by: currentUser.name, setAt: Date.now() };
+    p.history.push({ at: Date.now(), label: active.name + ' meeting arranged for ' + fmt(ts) + actorTag(), note: mnote });
+    p.updatedAt = Date.now();
+    await commit();
+    if (p.submittedBy) {
+      await addNote({
+        kind: 'meeting', proposalId: p.id, proposalTitle: p.title, category: p.category, forUserId: p.submittedBy,
+        message: active.name + ' meeting arranged for ' + fmt(ts), at: Date.now()
+      });
+    }
+    toast('Meeting arranged — proposer notified');
+  }
+  async function submitEval(p) {
+    var ratings = {}, anyRating = false;
+    EVAL_CRITERIA.forEach(function (c, i) {
+      var sel = root.querySelector('input[name="ev-' + p.id + '-' + i + '"]:checked');
+      if (sel) { ratings[i] = sel.value; anyRating = true; }
+    });
+    var commentEl = el('ev-comment-' + p.id);
+    var comment = commentEl ? commentEl.value.trim() : '';
+    if (!anyRating && !comment) { toast('Add a rating or a comment first'); return; }
+    var nameEl = el('ev-name-' + p.id);
+    var tester = nameEl ? nameEl.value.trim() : '';
+    if (!p.evaluations) p.evaluations = [];
+    p.evaluations.push({ at: Date.now(), tester: tester, ratings: ratings, comment: comment });
+    p.history.push({ at: Date.now(), label: 'Evaluation added' + (tester ? ' by ' + tester : ''), note: '' });
+    p.updatedAt = Date.now();
+    await commit(); toast('Evaluation submitted');
+  }
+  async function summarizeEval(p) {
+    var evs = p.evaluations || [];
+    if (!evs.length) { toast('No evaluations to summarize yet'); return; }
+    summarizing[p.id] = true; refreshDetail();
+    try {
+      var lines = evs.map(function (ev, idx) {
+        var rs = EVAL_CRITERIA.map(function (c, i) {
+          return (ev.ratings && ev.ratings[i]) ? (c + ': ' + ev.ratings[i]) : null;
+        }).filter(Boolean).join('; ');
+        return 'Tester ' + (idx + 1) + (ev.tester ? ' (' + ev.tester + ')' : '') +
+          ' — ratings: ' + (rs || 'none given') + '. Comment: ' + (ev.comment || 'none');
+      }).join('\n');
+      var prompt = 'You are summarizing user-acceptance test feedback for an internal system titled "' +
+        (p.title || 'the system') + '".\n\nEvaluations from ' + evs.length + ' tester(s):\n' + lines +
+        '\n\nWrite a concise summary for management as plain text, with each of these labels on its own line:\n' +
+        'Overall: one sentence on the general verdict and sentiment.\n' +
+        'Strengths: the main positives in 1-2 sentences or a short list.\n' +
+        'Issues to fix: the main problems or requests in a short list.\n' +
+        'Keep it under 120 words. Only use feedback that was actually provided; do not invent anything.';
+      var res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var d = await res.json();
+      var text = (d.content || []).filter(function (b) { return b.type === 'text'; })
+        .map(function (b) { return b.text; }).join('\n').trim();
+      if (!text) throw new Error('empty response');
+      p.evalSummary = { text: text, count: evs.length, at: Date.now() };
+      p.updatedAt = Date.now();
+      delete summarizing[p.id];
+      await commit();
+      toast('Summary ready');
+    } catch (e) {
+      delete summarizing[p.id];
+      refreshDetail();
+      toast('Could not generate the summary here');
+    }
+  }
+
+  /* ---------- auth UI (top app bar) ---------- */
+  var settingsMode = false;
+  var gated = false; // when true, the login card blocks the whole app
+  function showGate() { gated = true; showAuth('login'); }
+  var GEAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H10a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V10a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
+  var BELL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
+  function renderAuth() {
+    var box = el('appbar'); if (!box) return;
+    var right;
+    if (currentUser) {
+      var cnt = unreadCount(currentUser);
+      var bell = '<button class="iconbtn bell" data-auth="notes" title="Notifications" aria-label="Notifications">' + BELL +
+        (cnt ? '<span class="ndot">' + (cnt > 9 ? '9+' : cnt) + '</span>' : '') + '</button>';
+      right = bell +
+        '<button class="iconbtn" data-auth="settings" title="Settings" aria-label="Settings">' + GEAR + '</button>' +
+        '<button class="btn btn-ghost btn-sm" data-auth="logout">Sign out</button>';
+    } else {
+      right = '<button class="btn btn-primary btn-sm" data-auth="login">Sign in</button>';
+    }
+    box.innerHTML =
+      '<div class="appbar-in">' +
+        '<div class="brand"><span class="brand-name">MJM Group</span>' +
+        '<span class="brand-sub">Vibe Coding Project Management</span></div>' +
+        '<div class="appbar-right">' + right + '</div>' +
+      '</div>';
+  }
+
+  /* ---------- sign-in / sign-up card ---------- */
+  function authField(id, label, type, ac) {
+    return '<div class="auth-field"><label for="' + id + '">' + esc(label) + '</label>' +
+      '<input id="' + id + '" type="' + type + '" autocomplete="' + ac + '" /></div>';
+  }
+  function showAuth(mode) {
+    modalMode = 'auth'; mode = mode || 'login';
+    var body;
+    if (mode === 'login') {
+      body = '<h2 class="auth-h">Sign in</h2>' +
+        authField('a-login-email', 'Email', 'email', 'username') +
+        authField('a-login-pw', 'Password', 'password', 'current-password') +
+        '<div class="err" id="a-login-err"></div>' +
+        '<button class="btn-block" id="a-login-btn">Sign in</button>' +
+        '<p class="auth-alt">No account? <button class="linkbtn" data-authmode="signup">Create one</button></p>';
+    } else {
+      body = '<h2 class="auth-h">Create account</h2>' +
+        authField('a-name', 'Full name', 'text', 'name') +
+        authField('a-email', 'Email', 'email', 'username') +
+        authField('a-pw', 'Password', 'password', 'new-password') +
+        authField('a-pw2', 'Confirm password', 'password', 'new-password') +
+        '<div class="err" id="a-signup-err"></div>' +
+        '<button class="btn-block" id="a-signup-btn">Create account</button>' +
+        '<p class="auth-alt">Have an account? <button class="linkbtn" data-authmode="login">Sign in</button></p>';
+    }
+    openModal('<div class="authcard"><div class="auth-brand">MJM Group</div>' + body + '</div>', 'auth');
+    var m = el('modal');
+    Array.prototype.forEach.call(m.querySelectorAll('[data-authmode]'), function (b) {
+      b.onclick = function () { showAuth(b.getAttribute('data-authmode')); };
+    });
+    if (mode === 'login') el('a-login-btn').onclick = doLogin; else el('a-signup-btn').onclick = doSignup;
+  }
+  async function doLogin() {
+    var email = el('a-login-email').value.trim();
+    var pw = el('a-login-pw').value;
+    var err = el('a-login-err'); err.textContent = '';
+    if (!email || !pw) { err.textContent = 'Enter your email and password.'; return; }
+    var u = findUserByEmail(email);
+    if (!u) { err.textContent = 'No account found for that email.'; return; }
+    var h = await hashPw(pw, u.salt);
+    if (h !== u.passHash) { err.textContent = 'Incorrect password.'; return; }
+    currentUser = u; setSession(u.id);
+    gated = false; closeModal(); renderAuth(); render();
+    toast('Welcome back, ' + (u.name || '').split(' ')[0]);
+  }
+  async function doSignup() {
+    var name = el('a-name').value.trim();
+    var email = el('a-email').value.trim();
+    var pw = el('a-pw').value, pw2 = el('a-pw2').value;
+    var err = el('a-signup-err'); err.textContent = '';
+    if (!name || !email || !pw) { err.textContent = 'Fill in name, email and password.'; return; }
+    if (!/.+@.+\..+/.test(email)) { err.textContent = 'Enter a valid email address.'; return; }
+    if (pw.length < 6) { err.textContent = 'Password must be at least 6 characters.'; return; }
+    if (pw !== pw2) { err.textContent = 'Passwords don’t match.'; return; }
+    if (findUserByEmail(email)) { err.textContent = 'An account with that email already exists.'; return; }
+    var first = users.length === 0;
+    var salt = randHex(8);
+    var passHash = await hashPw(pw, salt);
+    var u = {
+      id: 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      name: name, email: email, roles: first ? ['admin'] : [], categories: [],
+      salt: salt, passHash: passHash, createdAt: Date.now()
+    };
+    users.push(u);
+    await saveUsers(users);
+    currentUser = u; setSession(u.id);
+    gated = false; closeModal(); renderAuth(); render();
+    toast(first ? 'Account created — you’re the Administrator' : 'Account created — you’re signed in');
+  }
+  function logout() {
+    currentUser = null; setSession(null);
+    if (settingsMode) closeSettings();
+    renderAuth(); render();
+    showGate();
+    toast('Signed out');
+  }
+
+  /* ---------- notifications ---------- */
+  function showNotes() {
+    if (!currentUser) return;
+    modalMode = 'notes';
+    var u = currentUser;
+    var list = relevantNotes(u).slice().sort(function (a, b) { return b.at - a.at; }).slice(0, 40);
+    var items = list.length ? list.map(function (n) {
+      var unread = (n.readBy || []).indexOf(u.id) === -1;
+      return '<button class="note-item' + (unread ? ' unread' : '') + '" data-note="' + n.id + '" data-pid="' + esc(n.proposalId) + '">' +
+        '<div class="note-msg">' + esc(n.message) + '</div>' +
+        '<div class="note-sub">' + esc(n.proposalTitle || '') + (n.category ? ' &middot; ' + esc(n.category) : '') + ' &middot; ' + fmt(n.at) + '</div>' +
+      '</button>';
+    }).join('') : '<p class="hint" style="padding:8px 0">No notifications yet.</p>';
+    openModal(
+      '<div class="modal-head"><h2 class="d-title" style="margin:0">Notifications</h2>' +
+      '<button class="xbtn" data-close="1">×</button></div>' +
+      '<div class="modal-body"><div class="note-list">' + items + '</div>' +
+      (list.length ? '<div class="actions-row" style="margin-top:12px"><button class="btn btn-ghost btn-sm" data-note="allread">Mark all as read</button></div>' : '') +
+      '</div>');
+  }
+  async function onNoteClick(nb) {
+    var u = currentUser; if (!u) return;
+    var id = nb.getAttribute('data-note');
+    if (id === 'allread') {
+      relevantNotes(u).forEach(function (n) { n.readBy = n.readBy || []; if (n.readBy.indexOf(u.id) === -1) n.readBy.push(u.id); });
+      await saveNotes(notes); renderAuth(); showNotes(); return;
+    }
+    var n = notes.find(function (x) { return x.id === id; });
+    if (n) { n.readBy = n.readBy || []; if (n.readBy.indexOf(u.id) === -1) n.readBy.push(u.id); await saveNotes(notes); }
+    renderAuth();
+    var pid = nb.getAttribute('data-pid');
+    if (pid && data.find(function (x) { return x.id === pid; })) showDetail(pid);
+    else showNotes();
+  }
+
+  /* ---------- settings view (user access) ---------- */
+  function showSettings() {
+    if (!currentUser) { showAuth('login'); return; }
+    settingsMode = true;
+    el('view-main').className = 'hide';
+    el('view-settings').className = '';
+    renderSettings();
+    try { window.scrollTo(0, 0); } catch (e) {}
+  }
+  function closeSettings() {
+    settingsMode = false;
+    el('view-settings').className = 'hide';
+    el('view-main').className = '';
+  }
+  function catChipsRow(u, editable) {
+    var all = (u.categories || []).indexOf('*') !== -1;
+    var chips = '<button class="catchip' + (all ? ' on' : '') + '" data-catall="' + u.id + '"' + (editable ? '' : ' disabled') + '>All</button>' +
+      MGMT_CATEGORIES.map(function (c) {
+        var on = !all && (u.categories || []).indexOf(c) !== -1;
+        return '<button class="catchip' + (on ? ' on' : '') + '" data-uid="' + u.id + '" data-cat="' + esc(c) + '"' + ((editable && !all) ? '' : ' disabled') + '>' + esc(c) + '</button>';
+      }).join('');
+    return '<div class="ua-cats"><span class="ua-cats-l">Approves</span>' + chips + '</div>';
+  }
+  function uaRow(u) {
+    var me = u.id === currentUser.id;
+    var canEdit = isAdmin(currentUser);
+    var checks = ROLE_OPTS.map(function (rr) {
+      var on = hasRole(u, rr[0]);
+      return '<label class="rolechk' + (on ? ' on' : '') + '"><input type="checkbox" data-role="' + rr[0] + '" data-uid="' + u.id + '"' +
+        (on ? ' checked' : '') + (canEdit ? '' : ' disabled') + ' /> ' + esc(rr[1]) + '</label>';
+    }).join('');
+    var cats = isManagement(u) ? catChipsRow(u, canEdit) : '';
+    return '<div class="ua-row"><div class="ua-main">' +
+      '<div class="ua-head"><span class="ua-email">' + esc(u.email) + '</span>' + (me ? '<span class="ua-you">YOU</span>' : '') +
+        '<span class="ua-roletag">' + esc(userRolesLabel(u)) + '</span></div>' +
+      '<div class="ua-desc">' + esc(describeUser(u)) + '</div>' +
+      '<div class="ua-roles">' + checks + '</div>' + cats +
+      '</div></div>';
+  }
+  function profileFormHTML() {
+    var u = currentUser;
+    return '<div class="grid2">' +
+      '<div class="field"><label for="prof-name">Full name</label><input id="prof-name" type="text" value="' + esc(u.name) + '" maxlength="60" /></div>' +
+      '<div class="field"><label>Email</label><input type="text" value="' + esc(u.email) + '" readonly style="background:#f4f5f8" /></div>' +
+    '</div>' +
+    '<div class="grid2">' +
+      '<div class="field"><label for="prof-pw">New password</label><input id="prof-pw" type="password" placeholder="leave blank to keep" autocomplete="new-password" /></div>' +
+      '<div class="field"><label for="prof-pw2">Confirm new password</label><input id="prof-pw2" type="password" autocomplete="new-password" /></div>' +
+    '</div>' +
+    '<div class="err" id="prof-err"></div>' +
+    '<button class="btn btn-primary" id="prof-save">Save profile</button>';
+  }
+  function renderSettings() {
+    var admin = isAdmin(currentUser);
+    var list = users.slice().sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); }).map(uaRow).join('');
+    el('view-settings').innerHTML =
+      '<div class="card-lg">' +
+        '<button class="linkback" data-settings="back">&larr; Back</button>' +
+        '<h1 class="settings-h">Settings</h1>' +
+        '<p class="ua-sec">User access</p>' +
+        '<p class="hint" style="margin-bottom:16px">Set what each person can access. Only an Administrator can change other people’s access.</p>' +
+        '<div class="ua-list">' + (list || '<p class="hint">No accounts yet.</p>') + '</div>' +
+        (admin ? '' : '<p class="hint" style="margin-top:12px">You’re signed in as ' + esc(userRolesLabel(currentUser)) + '. Ask an Administrator to change roles.</p>') +
+        '<p class="ua-sec" style="margin-top:28px">Your profile</p>' +
+        profileFormHTML() +
+      '</div>';
+  }
+  async function toggleRole(uid, role, on) {
+    if (!isAdmin(currentUser)) { toast('Only an Administrator can change access'); renderSettings(); return; }
+    var u = users.find(function (x) { return x.id === uid; }); if (!u) return;
+    if (role === 'admin' && !on) {
+      var admins = users.filter(function (x) { return getRoles(x).indexOf('admin') !== -1; }).length;
+      if (admins <= 1) { toast('There must be at least one Administrator'); renderSettings(); return; }
+    }
+    var roles = getRoles(u).slice();
+    var i = roles.indexOf(role);
+    if (on) { if (i === -1) roles.push(role); } else { if (i !== -1) roles.splice(i, 1); }
+    u.roles = roles;
+    delete u.role; // migrate off the single-role field
+    if (roles.indexOf('management') !== -1 && !u.categories) u.categories = [];
+    await saveUsers(users);
+    if (u.id === currentUser.id) renderAuth();
+    renderSettings(); render();
+    toast('Access updated');
+  }
+  async function toggleCat(chip) {
+    if (!isAdmin(currentUser)) { toast('Only an Administrator can change access'); return; }
+    var uid = chip.getAttribute('data-uid') || chip.getAttribute('data-catall');
+    var u = users.find(function (x) { return x.id === uid; }); if (!u) return;
+    u.categories = u.categories || [];
+    if (chip.hasAttribute('data-catall')) {
+      u.categories = (u.categories.indexOf('*') !== -1) ? [] : ['*'];
+    } else {
+      var c = chip.getAttribute('data-cat');
+      if (u.categories.indexOf('*') !== -1) u.categories = [];
+      var i = u.categories.indexOf(c);
+      if (i === -1) u.categories.push(c); else u.categories.splice(i, 1);
+    }
+    await saveUsers(users);
+    renderSettings(); render();
+  }
+  async function saveProfile() {
+    var u = currentUser;
+    var name = el('prof-name').value.trim();
+    var pw = el('prof-pw').value, pw2 = el('prof-pw2').value;
+    var err = el('prof-err'); err.textContent = '';
+    if (!name) { err.textContent = 'Name can’t be empty.'; return; }
+    if (pw || pw2) {
+      if (pw.length < 6) { err.textContent = 'New password must be at least 6 characters.'; return; }
+      if (pw !== pw2) { err.textContent = 'Passwords don’t match.'; return; }
+      u.salt = randHex(8); u.passHash = await hashPw(pw, u.salt);
+    }
+    u.name = name;
+    await saveUsers(users);
+    renderAuth(); renderSettings(); render();
+    toast('Profile saved');
+  }
+  function handleAuth(which) {
+    if (which === 'login') showAuth('login');
+    else if (which === 'signup') showAuth('signup');
+    else if (which === 'settings') showSettings();
+    else if (which === 'notes') showNotes();
+    else if (which === 'logout') logout();
+  }
+
+  /* ---------- events ---------- */
+  el('appbar').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-auth]'); if (!b) return;
+    handleAuth(b.getAttribute('data-auth'));
+  });
+  el('view-settings').addEventListener('click', function (e) {
+    if (e.target.closest('[data-settings="back"]')) { closeSettings(); return; }
+    if (e.target.closest('#prof-save')) { saveProfile(); return; }
+    var chip = e.target.closest('[data-cat],[data-catall]');
+    if (chip && !chip.disabled) { toggleCat(chip); }
+  });
+  el('view-settings').addEventListener('change', function (e) {
+    var rc = e.target.closest('input[data-role]');
+    if (rc) toggleRole(rc.getAttribute('data-uid'), rc.getAttribute('data-role'), rc.checked);
+  });
+  el('rail').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-sop]'); if (!b) return;
+    showSop(parseInt(b.getAttribute('data-sop'), 10));
+  });
+  el('new-btn').onclick = function () {
+    if (!currentUser) { toast('Log in to submit a proposal'); showAuth('login'); return; }
+    showForm();
+  };
+  el('search').addEventListener('input', function (e) { query = e.target.value.trim().toLowerCase(); render(); });
+
+  el('plist').addEventListener('click', function (e) {
+    var v = e.target.closest('[data-view]'); if (!v) return;
+    showDetail(v.getAttribute('data-view'));
+  });
+
+  el('backdrop').addEventListener('click', function (e) {
+    if (e.target === el('backdrop') || e.target.closest('[data-close]')) { closeModal(); return; }
+    var ab = e.target.closest('[data-auth]');
+    if (ab) { handleAuth(ab.getAttribute('data-auth')); return; }
+    var nb = e.target.closest('[data-note]');
+    if (nb) { onNoteClick(nb); return; }
+    var t = e.target.closest('[data-act]'); if (!t) return;
+    var act = t.getAttribute('data-act');
+    var pid = t.getAttribute('data-id');
+    var p = data.find(function (x) { return x.id === pid; });
+    if (!p) return;
+    if (act === 'tester') {
+      var key = pid + ':' + t.getAttribute('data-idx');
+      if (openTesters[key]) delete openTesters[key]; else openTesters[key] = true;
+      refreshDetail(); return;
+    }
+    if (act === 'adv') advance(p);
+    else if (act === 'approve') approveGate(p);
+    else if (act === 'back') sendBack(p);
+    else if (act === 'reject') reject(p);
+    else if (act === 'reopen') reopen(p);
+    else if (act === 'meet') arrangeMeeting(p);
+    else if (act === 'eval') submitEval(p);
+    else if (act === 'summ') summarizeEval(p);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && el('backdrop').className.indexOf('show') !== -1) closeModal();
+  });
+
+  /* ---------- boot ---------- */
+  renderRail();
+  renderAuth();
+  if (!getSession()) showGate(); // no session token → show login immediately (no content flash)
+  (async function () {
+    users = await loadUsers();
+    if (!Array.isArray(users)) users = [];
+    normalizeUsers();
+    await seedDemo();
+    notes = await loadNotes();
+    if (!Array.isArray(notes)) notes = [];
+    resolveSession();
+    renderAuth();
+    data = await loadAll();
+    if (!Array.isArray(data)) data = [];
+    data.forEach(function (p) { if (!p.evaluations) p.evaluations = []; });
+    render();
+    if (!currentUser) showGate();
+    else { gated = false; if (modalMode === 'auth') closeModal(); }
+  })();
+
+  // light poll so notifications / others' changes surface without a manual reload
+  if (hasStore && window.setInterval) {
+    setInterval(async function () {
+      if (!currentUser) return;
+      try {
+        var n = await loadNotes(); if (Array.isArray(n)) notes = n;
+        var uu = await loadUsers(); if (Array.isArray(uu)) { users = uu; normalizeUsers(); }
+        var dd = await loadAll(); if (Array.isArray(dd)) { data = dd; data.forEach(function (p) { if (!p.evaluations) p.evaluations = []; }); }
+        resolveSession();
+        if (!currentUser) { showGate(); return; }
+        renderAuth();
+        if (!gated && !settingsMode && el('backdrop').className.indexOf('show') === -1) render();
+      } catch (e) {}
+    }, 45000);
+  }
+})();
