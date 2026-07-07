@@ -71,6 +71,12 @@
 #app-root .apv-who { font-size: 11px; color: var(--ink-faint); margin-top: 2px; word-break: break-word; }
 #app-root .apv-node.done .apv-who { color: var(--done); font-weight: 600; }
 
+/* IT technical review */
+#app-root .itr-card { border: 1px solid var(--line-soft); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 10px; background: #fafbfd; }
+#app-root .itr-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 14px; margin-bottom: 6px; }
+#app-root .itr-comment { font-size: 13.5px; color: var(--ink-soft); margin: 0 0 8px; white-space: pre-wrap; }
+#app-root .itr-form { margin-top: 6px; }
+
 /* arrange meeting */
 #app-root .meet-box { background: var(--gate-soft); border: 1px solid #eddcb8; border-radius: var(--radius-sm); padding: 12px 14px; font-size: 14px; color: var(--ink); margin: 12px 0 4px; }
 #app-root .meet-box .meet-by { color: var(--ink-faint); font-weight: 500; }

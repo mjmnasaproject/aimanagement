@@ -41,6 +41,7 @@
   var STORE_KEY = 'proposals';
   var SHARED = true;
   var TESTING_STAGE = 3; // Build & Test — evaluation happens here
+  var IT_STAGE = 2; // IT Review — IT adds suggestions & files here
 
   var EVAL_CRITERIA = [
     'Easy to use',
@@ -217,6 +218,7 @@
   function isManagement(u) { return hasRole(u, 'management'); }
   function isDirector(u) { return hasRole(u, 'director'); }
   function canDirector(u) { return isAdmin(u) || isDirector(u); }
+  function canITReview(u) { return hasCat(u, 'IT'); } // Management with IT area, or Admin
   function normalizeUsers() {
     users.forEach(function (u) {
       if (!Array.isArray(u.roles)) u.roles = getRoles(u);
@@ -745,6 +747,46 @@
     body += evalStatsHTML(p) + evalSummaryHTML(p) + evalTestersHTML(p);
     return '<div class="ev-wrap">' + body + '</div>';
   }
+  function renderAtts(atts) {
+    if (!atts || !atts.length) return '';
+    return '<div class="att-list">' + atts.map(function (a) {
+      var isImg = a.type && a.type.indexOf('image/') === 0;
+      if (isImg) {
+        return '<a class="att" href="' + esc(a.dataUrl) + '" target="_blank" rel="noopener">' +
+          '<img src="' + esc(a.dataUrl) + '" alt="' + esc(a.name) + '" /><span>' + esc(a.name) + '</span></a>';
+      }
+      return '<a class="att-file" href="' + esc(a.dataUrl) + '" target="_blank" rel="noopener"' +
+        (a.link ? '' : ' download="' + esc(a.name) + '"') + '>' + esc(a.name || 'Attachment') + '</a>';
+    }).join('') + '</div>';
+  }
+  function itReviewSection(p) {
+    var isIT = (p.status !== 'rejected') && (p.done + 1 === IT_STAGE);
+    var reviews = p.itReviews || [];
+    if (!isIT && !reviews.length) return '';
+    var body = '<p class="sec-l">IT technical review</p>';
+    if (reviews.length) {
+      body += reviews.slice().reverse().map(function (r) {
+        return '<div class="itr-card"><div class="itr-top"><b>' + esc(r.by || 'IT') + '</b>' +
+          '<span class="ev-when">' + fmt(r.at) + '</span></div>' +
+          (r.comment ? '<p class="itr-comment">' + esc(r.comment) + '</p>' : '') +
+          renderAtts(r.attachments) + '</div>';
+      }).join('');
+    }
+    if (isIT) {
+      if (canITReview(currentUser)) {
+        body += '<div class="itr-form">' +
+          '<div class="field"><label for="itr-comment-' + p.id + '">Suggestion / comment</label>' +
+          '<textarea id="itr-comment-' + p.id + '" rows="3" placeholder="Are the planned tools acceptable and supportable? Framework advice, risks, requirements…" maxlength="800"></textarea></div>' +
+          '<div class="field"><label>Attach files <span class="hint" style="font-weight:500">(optional — up to 2, max 3 MB each)</span></label>' +
+          '<input id="itr-file1-' + p.id + '" type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" style="margin-bottom:8px" />' +
+          '<input id="itr-file2-' + p.id + '" type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" /></div>' +
+          '<button class="btn btn-primary btn-sm" data-act="itreview" data-id="' + p.id + '">Submit IT review</button></div>';
+      } else {
+        body += '<p class="hint">The IT team will add their review and any files here.</p>';
+      }
+    }
+    return '<div class="ev-wrap">' + body + '</div>';
+  }
   function showDetail(id) {
     var p = data.find(function (x) { return x.id === id; });
     if (!p) return;
@@ -818,6 +860,7 @@
         info +
         meetingBox +
         arrangeHTML +
+        itReviewSection(p) +
         evalSection(p) +
         '<p class="sec-l">Move this proposal</p>' +
         '<div class="note-in"><input type="text" placeholder="Add a note (optional)" id="note-' + p.id + '" maxlength="160" /></div>' +
@@ -935,6 +978,24 @@
     p.history.push({ at: Date.now(), label: 'Evaluation added' + (tester ? ' by ' + tester : ''), note: '' });
     p.updatedAt = Date.now();
     await commit(); toast('Evaluation submitted');
+  }
+  async function submitItReview(p) {
+    if (!canITReview(currentUser)) return denied();
+    var cEl = el('itr-comment-' + p.id);
+    var comment = cEl ? cEl.value.trim() : '';
+    var files = [];
+    try {
+      var f1 = await readFile(el('itr-file1-' + p.id));
+      var f2 = await readFile(el('itr-file2-' + p.id));
+      if (f1) files.push(f1);
+      if (f2) files.push(f2);
+    } catch (e) { toast(e && e.message ? e.message : 'Could not read the file'); return; }
+    if (!comment && !files.length) { toast('Add a comment or a file first'); return; }
+    if (!p.itReviews) p.itReviews = [];
+    p.itReviews.push({ at: Date.now(), by: currentUser.name, byId: currentUser.id, comment: comment, attachments: files });
+    p.history.push({ at: Date.now(), label: 'IT review added' + actorTag(), note: '' });
+    p.updatedAt = Date.now();
+    await commit(); toast('IT review submitted');
   }
   async function summarizeEval(p) {
     var evs = p.evaluations || [];
@@ -1292,6 +1353,7 @@
     else if (act === 'reject') reject(p);
     else if (act === 'reopen') reopen(p);
     else if (act === 'meet') arrangeMeeting(p);
+    else if (act === 'itreview') submitItReview(p);
     else if (act === 'eval') submitEval(p);
     else if (act === 'summ') summarizeEval(p);
   });
