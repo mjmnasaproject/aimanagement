@@ -1159,6 +1159,10 @@
   var settingsMode = false;
   var gated = false; // when true, the login card blocks the whole app
   function showGate() { gated = true; showAuth('login'); }
+  function showBootOverlay() {
+    gated = true;
+    openModal('<div class="authcard" style="text-align:center"><div class="auth-brand">MJM Group</div><p class="hint" style="margin:6px 0 0">Loading…</p></div>', 'auth');
+  }
   var GEAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H10a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V10a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
   var BELL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
   function renderAuth() {
@@ -1520,7 +1524,8 @@
   /* ---------- boot ---------- */
   renderRail();
   renderAuth();
-  if (!getSession()) showGate(); // no session token → show login immediately (no content flash)
+  // cover the screen right away so no content flashes before we know who's logged in
+  if (getSession()) showBootOverlay(); else showGate();
   (async function () {
     users = await loadUsers();
     if (!Array.isArray(users)) users = [];
