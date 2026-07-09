@@ -128,8 +128,14 @@
   }
   async function saveAll(list) {
     if (!sb) { mem.proposals = list; return true; }
-    try { var r = await sb.from('proposals').upsert(list); return !r.error; }
-    catch (e) { return false; }
+    var ok = true;
+    for (var i = 0; i < list.length; i++) {
+      try {
+        var r = await sb.from('proposals').upsert(list[i]);
+        if (r && r.error) { ok = false; if (window.console) console.error('proposal save failed:', r.error.message || r.error); }
+      } catch (e) { ok = false; if (window.console) console.error(e); }
+    }
+    return ok;
   }
 
   /* ---------- users, session & auth ---------- */
@@ -181,8 +187,14 @@
   }
   async function saveNotes(list) {
     if (!sb) { mem.notifications = list; return true; }
-    try { var r = await sb.from('notifications').upsert(list); return !r.error; }
-    catch (e) { return false; }
+    var ok = true;
+    for (var i = 0; i < list.length; i++) {
+      try {
+        var r = await sb.from('notifications').upsert(list[i]);
+        if (r && r.error) { ok = false; if (window.console) console.error('notification save failed:', r.error.message || r.error); }
+      } catch (e) { ok = false; }
+    }
+    return ok;
   }
   async function addNote(n) {
     n.id = 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
@@ -594,7 +606,7 @@
       history: [{ at: Date.now(), label: 'Proposal submitted', note: '' }]
     };
     data.unshift(p);
-    await saveAll(data);
+    var ok = sb ? !(await sb.from('proposals').upsert(p)).error : (await saveAll(data));
     await addNote({
       kind: 'submitted', proposalId: p.id, proposalTitle: p.title, category: p.category,
       forRole: 'management', message: 'New proposal awaiting approval — arrange a meeting', at: Date.now()
@@ -602,7 +614,7 @@
     query = ''; el('search').value = '';
     closeModal();
     render();
-    toast('Proposal submitted — Management notified');
+    toast(ok ? 'Proposal submitted — Management notified' : 'Submitted, but saving to the server failed — check your connection');
   }
 
   /* ---------- detail modal ---------- */
@@ -1524,9 +1536,10 @@
 
   /* ---------- boot ---------- */
   renderRail();
+  resolveSession();      // restore login instantly from the saved copy — no loading screen, survives refresh
+  gated = false;
   renderAuth();
-  // cover the screen right away so no content flashes before we know who's logged in
-  if (getSession()) showBootOverlay(); else showGate();
+  if (!currentUser) showGate();   // not signed in → straight to the login page
   (async function () {
     users = await loadUsers();
     if (!Array.isArray(users)) users = [];
@@ -1534,14 +1547,14 @@
     await seedDemo();
     notes = await loadNotes();
     if (!Array.isArray(notes)) notes = [];
-    resolveSession();
-    renderAuth();
+    resolveSession();    // pick up the freshest profile (roles/categories) from the database
     data = await loadAll();
     if (!Array.isArray(data)) data = [];
     data.forEach(function (p) { if (!p.evaluations) p.evaluations = []; });
+    renderAuth();
     render();
     if (!currentUser) showGate();
-    else { gated = false; if (modalMode === 'auth') closeModal(); }
+    else if (modalMode === 'auth') closeModal();
   })();
 
   // light poll so notifications / others' changes surface without a manual reload
