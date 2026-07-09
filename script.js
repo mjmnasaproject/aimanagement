@@ -40,6 +40,13 @@
   ];
   var STORE_KEY = 'proposals';
   var SHARED = true;
+
+  // ---- Supabase ----
+  var SUPABASE_URL = 'https://frekhsgoxibxcsdgymxz.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_jMtf2mrJGjcr_6hBfOvdZQ_ctN65AQm';
+  var sb = (window.supabase && window.supabase.createClient)
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+    : null;
   var TESTING_STAGE = 3; // Build & Test — evaluation happens here
   var IT_STAGE = 2; // IT Review — IT adds suggestions & files here
 
@@ -102,19 +109,26 @@
     { name: 'Test User',        email: 'user@test.com',     pw: 'test1234', roles: [],              categories: [] }
   ];
 
-  // storage wrapper with graceful in-memory fallback
-  var mem = {};
-  var hasStore = (typeof window !== 'undefined') && window.storage && typeof window.storage.get === 'function';
+  // storage — Supabase, with in-memory fallback if the client didn't load
+  var mem = { proposals: [], users: [], notifications: [] };
+  function normalizeAuthUser(u) {
+    if (!u) return u;
+    if (u.created_at != null && u.createdAt == null) u.createdAt = u.created_at;
+    if (!Array.isArray(u.roles)) u.roles = u.roles ? [].concat(u.roles) : [];
+    if (!Array.isArray(u.categories)) u.categories = u.categories ? [].concat(u.categories) : [];
+    delete u.pass_hash;
+    return u;
+  }
   async function loadAll() {
-    if (!hasStore) return mem[STORE_KEY] || [];
+    if (!sb) return mem.proposals;
     try {
-      var r = await window.storage.get(STORE_KEY, SHARED);
-      return r && r.value ? JSON.parse(r.value) : [];
+      var r = await sb.from('proposals').select('*').order('createdAt', { ascending: false });
+      return (r && r.data) ? r.data : [];
     } catch (e) { return []; }
   }
   async function saveAll(list) {
-    if (!hasStore) { mem[STORE_KEY] = list; return true; }
-    try { await window.storage.set(STORE_KEY, JSON.stringify(list), SHARED); return true; }
+    if (!sb) { mem.proposals = list; return true; }
+    try { var r = await sb.from('proposals').upsert(list); return !r.error; }
     catch (e) { return false; }
   }
 
@@ -122,52 +136,60 @@
   var USERS_KEY = 'users';
   var SESSION_KEY = 'proposal_session'; // per-device, localStorage
   async function loadUsers() {
-    if (!hasStore) return mem[USERS_KEY] || [];
+    if (!sb) return mem.users;
     try {
-      var r = await window.storage.get(USERS_KEY, SHARED);
-      return r && r.value ? JSON.parse(r.value) : [];
+      var r = await sb.from('users').select('id,name,email,roles,categories,createdAt:created_at').order('created_at', { ascending: true });
+      return (r && r.data) ? r.data.map(normalizeAuthUser) : [];
     } catch (e) { return []; }
   }
   async function saveUsers(list) {
-    if (!hasStore) { mem[USERS_KEY] = list; return true; }
-    try { await window.storage.set(USERS_KEY, JSON.stringify(list), SHARED); return true; }
-    catch (e) { return false; }
+    // only name/roles/categories are editable from the client; accounts are created via RPC
+    if (!sb) { mem.users = list; return true; }
+    try {
+      for (var i = 0; i < list.length; i++) {
+        var u = list[i];
+        await sb.from('users').update({ name: u.name, roles: u.roles || [], categories: u.categories || [] }).eq('id', u.id);
+      }
+      return true;
+    } catch (e) { return false; }
   }
   async function seedDemo() {
-    if (!SEED_DEMO) return;
-    var added = false;
+    if (!SEED_DEMO || !sb) return;
     for (var i = 0; i < DEMO_USERS.length; i++) {
       var d = DEMO_USERS[i];
       if (findUserByEmail(d.email)) continue;
-      var salt = randHex(8);
-      var passHash = await hashPw(d.pw, salt);
-      users.push({
-        id: 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5) + i,
-        name: d.name, email: d.email, roles: d.roles.slice(), categories: d.categories.slice(),
-        salt: salt, passHash: passHash, createdAt: Date.now()
-      });
-      added = true;
+      try {
+        var r = await sb.rpc('app_signup', { p_name: d.name, p_email: d.email, p_password: d.pw });
+        if (r.error || !r.data) continue;
+        var u = normalizeAuthUser(r.data);
+        // apply the intended roles/categories (signup only auto-sets the first account as admin)
+        await sb.from('users').update({ roles: d.roles.slice(), categories: d.categories.slice() }).eq('id', u.id);
+        u.roles = d.roles.slice(); u.categories = d.categories.slice();
+        users.push(u);
+      } catch (e) {}
     }
-    if (added) await saveUsers(users);
   }
 
   /* notifications */
   var NOTES_KEY = 'notifications';
   async function loadNotes() {
-    if (!hasStore) return mem[NOTES_KEY] || [];
-    try { var r = await window.storage.get(NOTES_KEY, SHARED); return r && r.value ? JSON.parse(r.value) : []; }
-    catch (e) { return []; }
+    if (!sb) return mem.notifications;
+    try {
+      var r = await sb.from('notifications').select('*').order('at', { ascending: false });
+      return (r && r.data) ? r.data : [];
+    } catch (e) { return []; }
   }
   async function saveNotes(list) {
-    if (!hasStore) { mem[NOTES_KEY] = list; return true; }
-    try { await window.storage.set(NOTES_KEY, JSON.stringify(list), SHARED); return true; }
+    if (!sb) { mem.notifications = list; return true; }
+    try { var r = await sb.from('notifications').upsert(list); return !r.error; }
     catch (e) { return false; }
   }
   async function addNote(n) {
     n.id = 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
     n.readBy = [];
     notes.unshift(n);
-    await saveNotes(notes);
+    if (sb) { try { await sb.from('notifications').insert(n); } catch (e) {} }
+    else { mem.notifications = notes; }
     renderAuth();
   }
   function relevantNotes(u) {
@@ -1197,10 +1219,23 @@
     var pw = el('a-login-pw').value;
     var err = el('a-login-err'); err.textContent = '';
     if (!email || !pw) { err.textContent = 'Enter your email and password.'; return; }
-    var u = findUserByEmail(email);
-    if (!u) { err.textContent = 'No account found for that email.'; return; }
-    var h = await hashPw(pw, u.salt);
-    if (h !== u.passHash) { err.textContent = 'Incorrect password.'; return; }
+    var btn = el('a-login-btn'); if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
+    var u = null;
+    if (sb) {
+      try {
+        var r = await sb.rpc('app_login', { p_email: email, p_password: pw });
+        if (r.error) { err.textContent = 'Could not sign in — please try again.'; }
+        else if (!r.data) { err.textContent = 'Wrong email or password.'; }
+        else u = normalizeAuthUser(r.data);
+      } catch (e) { err.textContent = 'Could not reach the server.'; }
+    } else {
+      u = findUserByEmail(email); if (!u) err.textContent = 'No account found for that email.';
+    }
+    if (btn) { btn.disabled = false; btn.textContent = 'Sign in'; }
+    if (!u) return;
+    var existing = users.find(function (x) { return x.id === u.id; });
+    if (existing) { existing.name = u.name; existing.roles = u.roles; existing.categories = u.categories; u = existing; }
+    else users.push(u);
     currentUser = u; setSession(u.id);
     gated = false; closeModal(); renderAuth(); render();
     toast('Welcome back, ' + (u.name || '').split(' ')[0]);
@@ -1215,16 +1250,21 @@
     if (pw.length < 6) { err.textContent = 'Password must be at least 6 characters.'; return; }
     if (pw !== pw2) { err.textContent = 'Passwords don’t match.'; return; }
     if (findUserByEmail(email)) { err.textContent = 'An account with that email already exists.'; return; }
-    var first = users.length === 0;
-    var salt = randHex(8);
-    var passHash = await hashPw(pw, salt);
-    var u = {
-      id: 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-      name: name, email: email, roles: first ? ['admin'] : [], categories: [],
-      salt: salt, passHash: passHash, createdAt: Date.now()
-    };
+    var btn = el('a-signup-btn'); if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
+    var u = null;
+    if (sb) {
+      try {
+        var r = await sb.rpc('app_signup', { p_name: name, p_email: email, p_password: pw });
+        if (r.error) { err.textContent = (r.error.message || '').indexOf('exists') !== -1 ? 'An account with that email already exists.' : 'Could not create the account.'; }
+        else u = normalizeAuthUser(r.data);
+      } catch (e) { err.textContent = 'Could not reach the server.'; }
+    } else {
+      u = { id: 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: name, email: email, roles: users.length === 0 ? ['admin'] : [], categories: [], createdAt: Date.now() };
+    }
+    if (btn) { btn.disabled = false; btn.textContent = 'Create account'; }
+    if (!u) return;
+    var first = (u.roles || []).indexOf('admin') !== -1;
     users.push(u);
-    await saveUsers(users);
     currentUser = u; setSession(u.id);
     gated = false; closeModal(); renderAuth(); render();
     toast(first ? 'Account created — you’re the Administrator' : 'Account created — you’re signed in');
@@ -1317,8 +1357,13 @@
       '<div class="field"><label for="prof-name">Full name</label><input id="prof-name" type="text" value="' + esc(u.name) + '" maxlength="60" /></div>' +
       '<div class="field"><label>Email</label><input type="text" value="' + esc(u.email) + '" readonly style="background:#f4f5f8" /></div>' +
     '</div>' +
+    '<p class="hint" style="margin:4px 0 8px">To change your password, fill in all three boxes below.</p>' +
     '<div class="grid2">' +
-      '<div class="field"><label for="prof-pw">New password</label><input id="prof-pw" type="password" placeholder="leave blank to keep" autocomplete="new-password" /></div>' +
+      '<div class="field"><label for="prof-oldpw">Current password</label><input id="prof-oldpw" type="password" placeholder="leave blank to keep" autocomplete="current-password" /></div>' +
+      '<div class="field"></div>' +
+    '</div>' +
+    '<div class="grid2">' +
+      '<div class="field"><label for="prof-pw">New password</label><input id="prof-pw" type="password" autocomplete="new-password" /></div>' +
       '<div class="field"><label for="prof-pw2">Confirm new password</label><input id="prof-pw2" type="password" autocomplete="new-password" /></div>' +
     '</div>' +
     '<div class="err" id="prof-err"></div>' +
@@ -1382,13 +1427,20 @@
   async function saveProfile() {
     var u = currentUser;
     var name = el('prof-name').value.trim();
+    var oldpw = (el('prof-oldpw') || {}).value || '';
     var pw = el('prof-pw').value, pw2 = el('prof-pw2').value;
     var err = el('prof-err'); err.textContent = '';
     if (!name) { err.textContent = 'Name can’t be empty.'; return; }
-    if (pw || pw2) {
+    if (pw || pw2 || oldpw) {
+      if (!oldpw) { err.textContent = 'Enter your current password to change it.'; return; }
       if (pw.length < 6) { err.textContent = 'New password must be at least 6 characters.'; return; }
-      if (pw !== pw2) { err.textContent = 'Passwords don’t match.'; return; }
-      u.salt = randHex(8); u.passHash = await hashPw(pw, u.salt);
+      if (pw !== pw2) { err.textContent = 'New passwords don’t match.'; return; }
+      if (sb) {
+        try {
+          var r = await sb.rpc('app_change_password', { p_id: u.id, p_old: oldpw, p_new: pw });
+          if (r.error || r.data !== true) { err.textContent = 'Current password is incorrect.'; return; }
+        } catch (e) { err.textContent = 'Could not reach the server.'; return; }
+      }
     }
     u.name = name;
     await saveUsers(users);
@@ -1487,7 +1539,7 @@
   })();
 
   // light poll so notifications / others' changes surface without a manual reload
-  if (hasStore && window.setInterval) {
+  if (sb && window.setInterval) {
     setInterval(async function () {
       if (!currentUser) return;
       try {
