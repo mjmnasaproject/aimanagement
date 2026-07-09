@@ -71,6 +71,18 @@
 #app-root .apv-who { font-size: 11px; color: var(--ink-faint); margin-top: 2px; word-break: break-word; }
 #app-root .apv-node.done .apv-who { color: var(--done); font-weight: 600; }
 
+/* feasibility feedback */
+#app-root .fz-card { border: 1px solid var(--line-soft); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 10px; background: #fafbfd; }
+#app-root .fz-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line-soft); font-size: 13.5px; }
+#app-root .fz-row:first-child { border-top: 0; }
+#app-root .fz-l { color: var(--ink); font-weight: 600; }
+#app-root .fz-v { color: var(--ink-soft); font-weight: 600; text-align: right; }
+#app-root .fz-yes { font-size: 12px; font-weight: 700; color: var(--done); background: var(--done-soft); padding: 2px 11px; border-radius: 999px; }
+#app-root .fz-no { font-size: 12px; font-weight: 700; color: var(--stop); background: var(--stop-soft); padding: 2px 11px; border-radius: 999px; }
+#app-root .fz-na { color: var(--ink-faint); }
+#app-root .fz-by { font-size: 12px; color: var(--ink-faint); margin-top: 10px; }
+#app-root .fz-form { margin-top: 6px; }
+
 /* IT technical review */
 #app-root .itr-card { border: 1px solid var(--line-soft); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 10px; background: #fafbfd; }
 #app-root .itr-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 14px; margin-bottom: 6px; }

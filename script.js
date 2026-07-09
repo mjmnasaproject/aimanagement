@@ -55,6 +55,19 @@
     { v: 'okay', label: 'Okay' },
     { v: 'poor', label: 'Bad' }
   ];
+  // Build & Test feasibility feedback — filled by the proposer
+  var FEAS_METRICS = [
+    { k: 'timeSaving', label: 'Time saving per month', ph: 'e.g. ~24 hours / month' },
+    { k: 'costSaving', label: 'Cost saving per month (RM)', ph: 'e.g. 3,000' },
+    { k: 'usersBenefit', label: 'People / departments benefiting', ph: 'e.g. HR team, ~15 staff' }
+  ];
+  var FEAS_CHECKS = [
+    { k: 'noErrors', label: 'Works without errors' },
+    { k: 'responsive', label: 'Fast / responsive enough' },
+    { k: 'easyToUse', label: 'Easy to use' },
+    { k: 'meetsObjective', label: 'Meets the objective & solves the problem' },
+    { k: 'readyGoLive', label: 'Ready to go live' }
+  ];
   // proposal-form categories (what a proposal is about)
   var CATEGORIES = [
     'Nursery', 'Plantation', 'Mill', 'Account', 'Human Resource (HR)',
@@ -161,6 +174,7 @@
     if (!u) return [];
     return notes.filter(function (n) {
       if (n.forUserId) return n.forUserId === u.id;
+      if (n.forCat) return hasCat(u, n.forCat); // e.g. the IT team
       if (n.forRole === 'management') return hasCat(u, CAT_TO_MGMT[n.category] || n.category) || hasCat(u, 'IT') || canDirector(u);
       return false;
     });
@@ -787,6 +801,65 @@
     }
     return '<div class="ev-wrap">' + body + '</div>';
   }
+
+  /* ---------- feasibility feedback (proposer, at Build & Test) ---------- */
+  function yesNo(v) {
+    if (v === 'yes') return '<span class="fz-yes">Yes</span>';
+    if (v === 'no') return '<span class="fz-no">No</span>';
+    return '<span class="fz-na">—</span>';
+  }
+  function feasibilityView(f) {
+    var metrics = FEAS_METRICS.map(function (m) {
+      return f[m.k] ? '<div class="fz-row"><span class="fz-l">' + esc(m.label) + '</span><span class="fz-v">' + esc(f[m.k]) + '</span></div>' : '';
+    }).join('');
+    var checks = FEAS_CHECKS.map(function (c) {
+      return '<div class="fz-row"><span class="fz-l">' + esc(c.label) + '</span>' + yesNo(f[c.k]) + '</div>';
+    }).join('');
+    var text = (f.issues ? '<p class="sec-l" style="margin-top:12px">Remaining issues / risks</p><p class="desc">' + esc(f.issues) + '</p>' : '') +
+      (f.comment ? '<p class="sec-l">Comments</p><p class="desc">' + esc(f.comment) + '</p>' : '');
+    return '<div class="fz-card">' + metrics + checks + text +
+      '<div class="fz-by">Submitted by ' + esc(f.by || '') + ' &middot; ' + fmt(f.at) + '</div></div>';
+  }
+  function feasibilityForm(p, f) {
+    f = f || {};
+    var metrics = FEAS_METRICS.map(function (m) {
+      return '<div class="field"><label for="fz-' + m.k + '-' + p.id + '">' + esc(m.label) + '</label>' +
+        '<input id="fz-' + m.k + '-' + p.id + '" type="text" maxlength="120" placeholder="' + esc(m.ph || '') + '" value="' + esc(f[m.k] || '') + '" /></div>';
+    }).join('');
+    var checks = FEAS_CHECKS.map(function (c) {
+      var opts = ['yes', 'no'].map(function (v) {
+        var id = 'fz-' + c.k + '-' + v + '-' + p.id;
+        return '<label class="ropt ropt-' + (v === 'yes' ? 'good' : 'poor') + '" for="' + id + '">' +
+          '<input type="radio" name="fz-' + c.k + '-' + p.id + '" id="' + id + '" value="' + v + '"' + (f[c.k] === v ? ' checked' : '') + ' />' +
+          (v === 'yes' ? 'Yes' : 'No') + '</label>';
+      }).join('');
+      return '<div class="ev-row"><span class="ev-cn">' + esc(c.label) + '</span><span class="ev-opts">' + opts + '</span></div>';
+    }).join('');
+    return '<div class="fz-form">' +
+      '<div class="grid2">' + metrics + '</div>' +
+      '<div class="ev-grid">' + checks + '</div>' +
+      '<div class="field" style="margin-top:12px"><label for="fz-issues-' + p.id + '">Remaining issues or risks</label>' +
+      '<textarea id="fz-issues-' + p.id + '" rows="2" maxlength="600" placeholder="Anything still not working, or risks for go-live">' + esc(f.issues || '') + '</textarea></div>' +
+      '<div class="field"><label for="fz-comment-' + p.id + '">Other comments</label>' +
+      '<textarea id="fz-comment-' + p.id + '" rows="2" maxlength="600">' + esc(f.comment || '') + '</textarea></div>' +
+      '<button class="btn btn-primary btn-sm" data-act="feas" data-id="' + p.id + '">' + (p.feasibility ? 'Update feasibility feedback' : 'Submit feasibility feedback') + '</button></div>';
+  }
+  function canFeasibility(p) {
+    return currentUser && (isAdmin(currentUser) || (p.submittedBy && p.submittedBy === currentUser.id));
+  }
+  function feasibilitySection(p) {
+    var isBT = (p.status !== 'rejected') && (p.done + 1 === TESTING_STAGE);
+    var f = p.feasibility;
+    if (!isBT && !f) return '';
+    var body = '<p class="sec-l">Feasibility feedback</p>';
+    if (isBT) body += '<p class="hint" style="margin-bottom:8px">Filled in by the proposer after building &amp; testing, for Management to review before final approval.</p>';
+    if (f) body += feasibilityView(f);
+    if (isBT) {
+      if (canFeasibility(p)) body += feasibilityForm(p, f);
+      else if (!f) body += '<p class="hint">The proposer will complete the feasibility feedback here.</p>';
+    }
+    return '<div class="ev-wrap">' + body + '</div>';
+  }
   function showDetail(id) {
     var p = data.find(function (x) { return x.id === id; });
     if (!p) return;
@@ -861,7 +934,7 @@
         meetingBox +
         arrangeHTML +
         itReviewSection(p) +
-        evalSection(p) +
+        feasibilitySection(p) +
         '<p class="sec-l">Move this proposal</p>' +
         '<div class="note-in"><input type="text" placeholder="Add a note (optional)" id="note-' + p.id + '" maxlength="160" /></div>' +
         actionsHTML(p) +
@@ -888,6 +961,15 @@
     p.history.push({ at: Date.now(), label: label, note: note });
     p.updatedAt = Date.now();
     await commit();
+    var nowActive = STAGES[p.done + 1];
+    if (nowActive && nowActive.type === 'gate') {
+      // reached a management review gate (e.g. Final Approval) — notify Management to review
+      await addNote({ kind: 'review', proposalId: p.id, proposalTitle: p.title, category: p.category, forRole: 'management', message: nowActive.name + ' needed — please review this proposal', at: Date.now() });
+    }
+    if (p.done >= STAGES.length - 1 && p.submittedBy) {
+      // deployed & live — all stages completed, tell the proposer
+      await addNote({ kind: 'live', proposalId: p.id, proposalTitle: p.title, category: p.category, forUserId: p.submittedBy, message: 'Your project is now live — all stages completed', at: Date.now() });
+    }
     toast(p.done >= STAGES.length - 1 ? 'Marked as live' : 'Moved to next stage');
   }
   async function sendBack(p) {
@@ -935,6 +1017,11 @@
       if (p.submittedBy) {
         await addNote({ kind: 'approved', proposalId: p.id, proposalTitle: p.title, category: p.category, forUserId: p.submittedBy, message: active.name + ' passed — now at ' + STAGES[p.done].name, at: Date.now() });
       }
+      var nextStage = STAGES[p.done + 1];
+      if (nextStage && nextStage.type === 'milestone') {
+        // Final Approval passed → notify the IT team to deploy & go live
+        await addNote({ kind: 'deploy', proposalId: p.id, proposalTitle: p.title, category: p.category, forCat: 'IT', message: 'Approved for deployment — IT to deploy & go live', at: Date.now() });
+      }
     } else {
       p.history.push({ at: Date.now(), label: active.name + ' — approval recorded (' + mine.map(function (s) { return slotLabel(s, p); }).join(', ') + ')' + actorTag(), note: logNote(p) });
     }
@@ -978,6 +1065,21 @@
     p.history.push({ at: Date.now(), label: 'Evaluation added' + (tester ? ' by ' + tester : ''), note: '' });
     p.updatedAt = Date.now();
     await commit(); toast('Evaluation submitted');
+  }
+  async function submitFeasibility(p) {
+    if (!canFeasibility(p)) { toast('Only the proposer can fill this in'); return; }
+    var f = { by: currentUser.name, byId: currentUser.id, at: Date.now() };
+    var any = false;
+    FEAS_METRICS.forEach(function (m) { var e = el('fz-' + m.k + '-' + p.id); var v = e ? e.value.trim() : ''; f[m.k] = v; if (v) any = true; });
+    FEAS_CHECKS.forEach(function (c) { var sel = root.querySelector('input[name="fz-' + c.k + '-' + p.id + '"]:checked'); f[c.k] = sel ? sel.value : ''; if (sel) any = true; });
+    var iss = el('fz-issues-' + p.id); f.issues = iss ? iss.value.trim() : ''; if (f.issues) any = true;
+    var com = el('fz-comment-' + p.id); f.comment = com ? com.value.trim() : ''; if (f.comment) any = true;
+    if (!any) { toast('Fill in at least one field'); return; }
+    var update = !!p.feasibility;
+    p.feasibility = f;
+    p.history.push({ at: Date.now(), label: (update ? 'Feasibility feedback updated' : 'Feasibility feedback submitted') + actorTag(), note: '' });
+    p.updatedAt = Date.now();
+    await commit(); toast('Feasibility feedback saved');
   }
   async function submitItReview(p) {
     if (!canITReview(currentUser)) return denied();
@@ -1230,16 +1332,22 @@
   }
   function renderSettings() {
     var admin = isAdmin(currentUser);
-    var list = users.slice().sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); }).map(uaRow).join('');
+    var canSeeList = admin || isManagement(currentUser);
+    var listBlock = '';
+    if (canSeeList) {
+      var list = users.slice().sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); }).map(uaRow).join('');
+      listBlock =
+        '<p class="ua-sec">User access</p>' +
+        '<p class="hint" style="margin-bottom:16px">Set what each person can access. Only an Administrator can change other people’s access.</p>' +
+        '<div class="ua-list">' + (list || '<p class="hint">No accounts yet.</p>') + '</div>' +
+        (admin ? '' : '<p class="hint" style="margin-top:12px">You can view access here, but only an Administrator can change it.</p>');
+    }
     el('view-settings').innerHTML =
       '<div class="card-lg">' +
         '<button class="linkback" data-settings="back">&larr; Back</button>' +
         '<h1 class="settings-h">Settings</h1>' +
-        '<p class="ua-sec">User access</p>' +
-        '<p class="hint" style="margin-bottom:16px">Set what each person can access. Only an Administrator can change other people’s access.</p>' +
-        '<div class="ua-list">' + (list || '<p class="hint">No accounts yet.</p>') + '</div>' +
-        (admin ? '' : '<p class="hint" style="margin-top:12px">You’re signed in as ' + esc(userRolesLabel(currentUser)) + '. Ask an Administrator to change roles.</p>') +
-        '<p class="ua-sec" style="margin-top:28px">Your profile</p>' +
+        listBlock +
+        '<p class="ua-sec"' + (canSeeList ? ' style="margin-top:28px"' : '') + '>Your profile</p>' +
         profileFormHTML() +
       '</div>';
   }
@@ -1354,6 +1462,7 @@
     else if (act === 'reopen') reopen(p);
     else if (act === 'meet') arrangeMeeting(p);
     else if (act === 'itreview') submitItReview(p);
+    else if (act === 'feas') submitFeasibility(p);
     else if (act === 'eval') submitEval(p);
     else if (act === 'summ') summarizeEval(p);
   });
