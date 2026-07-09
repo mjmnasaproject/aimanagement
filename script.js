@@ -1185,7 +1185,8 @@
       var cnt = unreadCount(currentUser);
       var bell = '<button class="iconbtn bell" data-auth="notes" title="Notifications" aria-label="Notifications">' + BELL +
         (cnt ? '<span class="ndot">' + (cnt > 9 ? '9+' : cnt) + '</span>' : '') + '</button>';
-      right = bell +
+      right = '<span class="hi">Hi, ' + esc((currentUser.name || '').split(' ')[0] || 'there') + '</span>' +
+        bell +
         '<button class="iconbtn" data-auth="settings" title="Settings" aria-label="Settings">' + GEAR + '</button>' +
         '<button class="btn btn-ghost btn-sm" data-auth="logout">Sign out</button>';
     } else {

@@ -42,6 +42,7 @@
 #app-root .brand-name { font-size: 21px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); }
 #app-root .brand-sub { font-size: 15px; font-weight: 600; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #app-root .appbar-right { display: flex; align-items: center; gap: 10px; flex: none; }
+#app-root .hi { font-size: 14px; font-weight: 600; color: var(--ink-soft); margin-right: 4px; white-space: nowrap; }
 #app-root .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--ink-soft); cursor: pointer; }
 #app-root .iconbtn:hover { background: var(--canvas); color: var(--ink); }
 #app-root .iconbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
