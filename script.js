@@ -442,10 +442,6 @@
           fld('f-proposer', 'Proposer', 'e.g. Aisha Tan', true, 60) +
           fld('f-email', 'Your email', 'e.g. name@company.com', false, 80, 'email') +
         '</div>' +
-        '<div class="grid2">' +
-          fld('f-proposerdept', 'Proposer’s department', 'e.g. Human Resources', false, 60) +
-          fld('f-deptinvolved', 'Department(s) involved', 'e.g. HR, IT, Finance', false, 100) +
-        '</div>' +
         fld('f-title', 'Project title', 'e.g. Leave request portal', true, 80) +
         '<div class="field"><label for="f-category">Category of proposal <span class="req">*</span></label>' +
           '<select id="f-category" style="max-width:340px"><option value="" selected disabled>Select a category…</option>' + cats + '</select>' +
@@ -455,8 +451,8 @@
         ta('f-tools', 'Planned tools / tech', 'Tools, platforms or frameworks you plan to use (e.g. Google Sheets, Power Automate, a web app). Helps IT review feasibility.', false, 2, 500) +
         '<p class="sec-l" style="margin-top:4px">Cost &amp; return</p>' +
         '<div class="grid2">' +
-          fldNum('f-investment', 'Cost investment (RM)', 'e.g. 12000 — subscription, licences') +
-          fldNum('f-returns', 'Return / benefit (RM)', 'e.g. 30000 — annual cost saving') +
+          fldNum('f-investment', 'Cost investment (RM) per annum', 'e.g. 12000 — subscription, licences') +
+          fldNum('f-returns', 'Net Return / benefit (RM) per annum', 'e.g. 30000 — annual cost saving') +
         '</div>' +
         '<div class="field"><label for="f-roi">ROI (auto-calculated)</label>' +
           '<input id="f-roi" type="text" value="—" readonly style="max-width:220px;background:#f4f5f8;font-weight:700" />' +
@@ -543,8 +539,6 @@
       id: uid(), title: title,
       proposer: proposer,
       email: el('f-email').value.trim(),
-      proposerDept: el('f-proposerdept').value.trim(),
-      deptInvolved: el('f-deptinvolved').value.trim(),
       category: category,
       objective: objective,
       problem: el('f-problem').value.trim(),
