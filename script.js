@@ -204,13 +204,31 @@
   function unreadCount(u) {
     return relevantNotes(u).filter(function (n) { return (n.readBy || []).indexOf(u.id) === -1; }).length;
   }
-  function getSession() { try { return window.localStorage.getItem(SESSION_KEY); } catch (e) { return null; } }
-  function setSession(id) {
-    try { if (id) window.localStorage.setItem(SESSION_KEY, id); else window.localStorage.removeItem(SESSION_KEY); } catch (e) {}
+  function setSession(user) {
+    try {
+      if (user) window.localStorage.setItem(SESSION_KEY, JSON.stringify({
+        id: user.id, name: user.name, email: user.email,
+        roles: user.roles || [], categories: user.categories || [], createdAt: user.createdAt
+      }));
+      else window.localStorage.removeItem(SESSION_KEY);
+    } catch (e) {}
+  }
+  function getSession() {
+    try {
+      var s = window.localStorage.getItem(SESSION_KEY);
+      if (!s) return null;
+      if (s.charAt(0) === '{') return JSON.parse(s);
+      return { id: s }; // legacy sessions stored just the id
+    } catch (e) { return null; }
   }
   function resolveSession() {
-    var id = getSession();
-    currentUser = id ? (users.find(function (u) { return u.id === id; }) || null) : null;
+    var s = getSession();
+    if (!s || !s.id) { currentUser = null; return; }
+    var u = users.find(function (x) { return x.id === s.id; });
+    if (u) { currentUser = u; setSession(u); return; }
+    // keep you logged in from the saved copy even if the user list is slow/failed to load
+    currentUser = normalizeAuthUser({ id: s.id, name: s.name, email: s.email, roles: s.roles, categories: s.categories, createdAt: s.createdAt });
+    users.push(currentUser);
   }
   function randHex(n) {
     var a = new Uint8Array(n);
@@ -807,9 +825,9 @@
         body += '<div class="itr-form">' +
           '<div class="field"><label for="itr-comment-' + p.id + '">Suggestion / comment</label>' +
           '<textarea id="itr-comment-' + p.id + '" rows="3" placeholder="Are the planned tools acceptable and supportable? Framework advice, risks, requirements…" maxlength="800"></textarea></div>' +
-          '<div class="field"><label>Attach files <span class="hint" style="font-weight:500">(optional — up to 2, max 3 MB each)</span></label>' +
-          '<input id="itr-file1-' + p.id + '" type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" style="margin-bottom:8px" />' +
-          '<input id="itr-file2-' + p.id + '" type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" /></div>' +
+          '<div class="field"><label>Attach files <span class="hint" style="font-weight:500">(optional — up to 2, max 3 MB each; .md and other files welcome)</span></label>' +
+          '<input id="itr-file1-' + p.id + '" type="file" accept=".md,.markdown,.txt,image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" style="margin-bottom:8px" />' +
+          '<input id="itr-file2-' + p.id + '" type="file" accept=".md,.markdown,.txt,image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" /></div>' +
           '<button class="btn btn-primary btn-sm" data-act="itreview" data-id="' + p.id + '">Submit IT review</button></div>';
       } else {
         body += '<p class="hint">The IT team will add their review and any files here.</p>';
@@ -922,21 +940,6 @@
       attach +
       (p.desc ? '<p class="sec-l">Details</p><p class="desc">' + esc(p.desc) + '</p>' : '');
 
-    var meetActive = STAGES[p.done + 1];
-    var meetingBox = p.meeting
-      ? '<div class="meet-box">&#128197; <b>' + esc(p.meeting.stage || 'Approval') + ' meeting</b> &middot; ' + fmt(p.meeting.at) +
-        (p.meeting.note ? ' &middot; ' + esc(p.meeting.note) : '') +
-        '<span class="meet-by"> &middot; set by ' + esc(p.meeting.by || '') + '</span></div>'
-      : '';
-    var canArrange = p.status !== 'rejected' && meetActive && meetActive.type === 'gate' && canMove(p, 'adv');
-    var arrangeHTML = canArrange
-      ? '<div class="meet-form"><p class="sec-l" style="margin-top:0">Arrange ' + esc(meetActive.name) + ' meeting</p>' +
-        '<div class="grid2">' +
-          '<div class="field"><label for="meet-' + p.id + '">Date &amp; time</label><input id="meet-' + p.id + '" type="datetime-local" /></div>' +
-          '<div class="field"><label for="meetnote-' + p.id + '">Note (optional)</label><input id="meetnote-' + p.id + '" type="text" maxlength="160" placeholder="e.g. venue, Zoom link, agenda" /></div>' +
-        '</div>' +
-        '<button class="btn btn-ghost btn-sm" data-act="meet" data-id="' + p.id + '">Save and invite the meeting</button></div>'
-      : '';
     openModal(
       '<div class="modal-head"><div>' +
         '<h2 class="d-title">' + esc(p.title) + '</h2>' +
@@ -947,8 +950,6 @@
           (p.category ? ' &middot; ' + esc(p.category) : '') + '</p>' +
         progressRail(p) +
         info +
-        meetingBox +
-        arrangeHTML +
         itReviewSection(p) +
         feasibilitySection(p) +
         '<p class="sec-l">Move this proposal</p>' +
@@ -1240,7 +1241,7 @@
     var existing = users.find(function (x) { return x.id === u.id; });
     if (existing) { existing.name = u.name; existing.roles = u.roles; existing.categories = u.categories; u = existing; }
     else users.push(u);
-    currentUser = u; setSession(u.id);
+    currentUser = u; setSession(u);
     gated = false; closeModal(); renderAuth(); render();
     toast('Welcome back, ' + (u.name || '').split(' ')[0]);
   }
@@ -1269,7 +1270,7 @@
     if (!u) return;
     var first = (u.roles || []).indexOf('admin') !== -1;
     users.push(u);
-    currentUser = u; setSession(u.id);
+    currentUser = u; setSession(u);
     gated = false; closeModal(); renderAuth(); render();
     toast(first ? 'Account created — you’re the Administrator' : 'Account created — you’re signed in');
   }
