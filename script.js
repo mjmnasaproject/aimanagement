@@ -459,30 +459,49 @@
     var req = requiredSlots(p);
     return eligibleSlots(currentUser, p).some(function (s) { return req.indexOf(s) !== -1 && !g[s]; });
   }
+  function atITReview(p) { return p.status !== 'rejected' && (p.done + 1) === IT_STAGE; }
+  function atDeploy(p) { return p.status !== 'rejected' && (p.done + 1) === (STAGES.length - 1); }
+  function matchTab(p) {
+    if (listTab === 'mine') return needsMyApproval(p);
+    if (listTab === 'itreview') return atITReview(p);
+    if (listTab === 'deploy') return atDeploy(p);
+    return true;
+  }
   function renderTabs() {
     var box = el('list-tabs'); if (!box) return;
-    if (!canApproveAny(currentUser)) { box.innerHTML = ''; if (listTab === 'mine') listTab = 'all'; return; }
-    var mineCount = data.filter(needsMyApproval).length;
-    box.innerHTML =
-      '<button class="ltab' + (listTab === 'all' ? ' on' : '') + '" data-ltab="all">All proposals</button>' +
-      '<button class="ltab' + (listTab === 'mine' ? ' on' : '') + '" data-ltab="mine">Pending my approval' +
-        (mineCount ? ' <span class="ltab-n">' + mineCount + '</span>' : '') + '</button>';
+    var u = currentUser;
+    var showApprove = canApproveAny(u), showIT = canITReview(u);
+    // reset to All if the current tab isn't available to this user
+    if (listTab === 'mine' && !showApprove) listTab = 'all';
+    if ((listTab === 'itreview' || listTab === 'deploy') && !showIT) listTab = 'all';
+    if (!showApprove && !showIT) { box.innerHTML = ''; return; }
+    function tab(key, label, count) {
+      return '<button class="ltab' + (listTab === key ? ' on' : '') + '" data-ltab="' + key + '">' + esc(label) +
+        (count ? ' <span class="ltab-n">' + count + '</span>' : '') + '</button>';
+    }
+    var out = tab('all', 'All proposals', 0);
+    if (showApprove) out += tab('mine', 'Pending my approval', data.filter(needsMyApproval).length);
+    if (showIT) {
+      out += tab('itreview', 'IT review', data.filter(atITReview).length);
+      out += tab('deploy', 'Deploy & go live', data.filter(atDeploy).length);
+    }
+    box.innerHTML = out;
   }
   function render() {
     el('count').textContent = data.length + ' total';
     renderTabs();
-    var list = data.filter(function (p) {
-      if (listTab === 'mine' && !needsMyApproval(p)) return false;
-      return matches(p);
-    });
+    var list = data.filter(function (p) { return matchTab(p) && matches(p); });
     var box = el('plist');
     if (!data.length) {
       box.innerHTML = '<div class="empty"><p>No proposals yet — click “+ New proposal” to add the first one.</p></div>';
       return;
     }
     if (!list.length) {
-      box.innerHTML = '<div class="empty"><p>' +
-        (listTab === 'mine' ? 'Nothing is waiting on your approval right now.' : 'Nothing matches your search.') + '</p></div>';
+      var emptyMsg = 'Nothing matches your search.';
+      if (listTab === 'mine') emptyMsg = 'Nothing is waiting on your approval right now.';
+      else if (listTab === 'itreview') emptyMsg = 'No projects are in IT review right now.';
+      else if (listTab === 'deploy') emptyMsg = 'No projects are waiting to deploy right now.';
+      box.innerHTML = '<div class="empty"><p>' + emptyMsg + '</p></div>';
       return;
     }
     var header = '<div class="list-head"><span>Project</span><span class="lh-roi">ROI</span>' +
