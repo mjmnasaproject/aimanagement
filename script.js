@@ -375,6 +375,7 @@
   var modalMode = null;   // 'sop' | 'form' | 'detail' | 'auth' | 'settings'
   var detailId = null;
   var sopIdx = null;
+  var editingId = null;
 
   var el = function (id) { return document.getElementById(id); };
   function esc(s) {
@@ -505,11 +506,13 @@
   }
 
   /* ---------- new proposal form ---------- */
-  function showForm() {
+  function showForm(edit) {
     modalMode = 'form';
+    editingId = edit ? edit.id : null;
+    var isEdit = !!edit;
     var cats = CATEGORIES.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
     openModal(
-      '<div class="modal-head"><h2 class="d-title" style="margin:0">New proposal</h2>' +
+      '<div class="modal-head"><h2 class="d-title" style="margin:0">' + (isEdit ? 'Edit proposal' : 'New proposal') + '</h2>' +
       '<button class="xbtn" data-close="1">×</button></div>' +
       '<div class="modal-body">' +
         '<div class="grid2">' +
@@ -531,11 +534,12 @@
         '<div class="field"><label for="f-roi">ROI (auto-calculated)</label>' +
           '<input id="f-roi" type="text" value="—" readonly style="max-width:220px;background:#f4f5f8;font-weight:700" />' +
           '<div class="hint">ROI = (Cost Savings − Expense) ÷ Expense × 100%.</div></div>' +
+        (isEdit ? '' :
         '<div class="field"><label>Attachments <span class="hint" style="font-weight:500">(optional — up to 2 files or images, max 3 MB each)</span></label>' +
           '<input id="f-file1" type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" style="margin-bottom:8px" />' +
-          '<input id="f-file2" type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" /></div>' +
+          '<input id="f-file2" type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" /></div>') +
         '<div class="actions-row" style="margin-top:8px">' +
-          '<button class="btn btn-primary" id="submit-btn">Submit proposal</button>' +
+          '<button class="btn btn-primary" id="submit-btn">' + (isEdit ? 'Save changes' : 'Submit proposal') + '</button>' +
           '<button class="btn btn-ghost" data-close="1">Cancel</button>' +
         '</div>' +
       '</div>');
@@ -546,10 +550,24 @@
     };
     el('f-investment').addEventListener('input', recompute);
     el('f-returns').addEventListener('input', recompute);
-    if (currentUser) {
+    if (edit) {
+      el('f-proposer').value = edit.proposer || '';
+      el('f-email').value = edit.email || '';
+      el('f-title').value = edit.title || '';
+      el('f-category').value = edit.category || '';
+      el('f-objective').value = edit.objective || '';
+      el('f-problem').value = edit.problem || '';
+      el('f-tools').value = edit.tools || '';
+      el('f-investment').value = (edit.investment != null ? edit.investment : '');
+      el('f-returns').value = (edit.returns != null ? edit.returns : '');
+      recompute();
+    } else if (currentUser) {
       el('f-proposer').value = currentUser.name || '';
       el('f-email').value = currentUser.email || '';
     }
+  }
+  function canEditProposal(p) {
+    return currentUser && (isAdmin(currentUser) || (p.submittedBy && p.submittedBy === currentUser.id));
   }
   function fld(id, label, ph, req, max, type) {
     return '<div class="field"><label for="' + id + '">' + esc(label) + (req ? ' <span class="req">*</span>' : '') + '</label>' +
@@ -595,6 +613,30 @@
     if (!ok) return;
 
     var btn = el('submit-btn'); btn.disabled = true; btn.textContent = 'Saving…';
+    var investment = parseFloat(el('f-investment').value);
+    var returns = parseFloat(el('f-returns').value);
+
+    // ---- edit an existing proposal (keeps its stage, history, attachments) ----
+    if (editingId) {
+      var target = data.find(function (x) { return x.id === editingId; });
+      editingId = null;
+      if (target) {
+        target.title = title; target.proposer = proposer; target.email = el('f-email').value.trim();
+        target.category = category; target.objective = objective;
+        target.problem = el('f-problem').value.trim(); target.tools = el('f-tools').value.trim();
+        target.investment = isFinite(investment) ? investment : null;
+        target.returns = isFinite(returns) ? returns : null;
+        target.roi = calcRoi(el('f-investment').value, el('f-returns').value);
+        target.updatedAt = Date.now();
+        if (!target.history) target.history = [];
+        target.history.push({ at: Date.now(), label: 'Proposal edited' + actorTag(), note: '' });
+        var oke = sb ? !(await sb.from('proposals').upsert(target)).error : (await saveAll(data));
+        closeModal(); render();
+        toast(oke ? 'Proposal updated' : 'Saved, but the server update failed — check your connection');
+        return;
+      }
+    }
+
     var files = [];
     try {
       var f1 = await readFile(el('f-file1'));
@@ -607,8 +649,6 @@
       return;
     }
 
-    var investment = parseFloat(el('f-investment').value);
-    var returns = parseFloat(el('f-returns').value);
     var p = {
       id: uid(), title: title,
       proposer: proposer,
@@ -1001,6 +1041,7 @@
       '<div class="modal-body">' +
         '<p class="d-meta">submitted by <b>' + esc(submitter(p)) + '</b> &middot; ' + fmt(p.createdAt) +
           (p.category ? ' &middot; ' + esc(p.category) : '') + '</p>' +
+        (canEditProposal(p) ? '<div class="actions-row" style="margin:0 0 10px"><button class="btn btn-ghost btn-sm" data-act="editprop" data-id="' + p.id + '">✎ Edit proposal</button></div>' : '') +
         progressRail(p) +
         info +
         itReviewSection(p) +
@@ -1564,7 +1605,8 @@
       if (openTesters[key]) delete openTesters[key]; else openTesters[key] = true;
       refreshDetail(); return;
     }
-    if (act === 'adv') advance(p);
+    if (act === 'editprop') showForm(p);
+    else if (act === 'adv') advance(p);
     else if (act === 'approve') approveGate(p);
     else if (act === 'back') sendBack(p);
     else if (act === 'reject') reject(p);
