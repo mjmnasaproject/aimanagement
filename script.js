@@ -383,10 +383,25 @@
     });
   }
   function fmt(ts) {
-    return new Date(ts).toLocaleString('en-US', {
+    return new Date(Number(ts)).toLocaleString('en-US', {
       month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true
     });
   }
+  var BUILD_DAYS = 90; // Build & Test countdown, starts when IT Review completes
+  function buildStartTs(p) {
+    if (p.buildStart) return p.buildStart;
+    var h = p.history || [];
+    for (var i = h.length - 1; i >= 0; i--) { if (/IT Review completed/i.test(h[i].label || '')) return h[i].at; }
+    return h.length ? h[h.length - 1].at : (p.updatedAt || p.createdAt);
+  }
+  function buildInfo(p) {
+    var start = Number(buildStartTs(p));
+    if (!start || !isFinite(start)) return null;
+    var deadline = start + BUILD_DAYS * 86400000;
+    var days = Math.ceil((deadline - Date.now()) / 86400000);
+    return { start: start, deadline: deadline, days: days, overdue: days < 0 };
+  }
+  function inBuildTest(p) { return p.status !== 'rejected' && (p.done + 1) === TESTING_STAGE; }
   function pad2(n) { return n < 10 ? '0' + n : '' + n; }
   function uid() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
@@ -440,10 +455,17 @@
     if (!list.length) { box.innerHTML = '<div class="empty"><p>Nothing matches your search.</p></div>'; return; }
     box.innerHTML = list.map(function (p) {
       var pill = statusPill(p);
+      var roiTag = (p.roi === 0 || p.roi) ? '<span class="roi-tag">ROI ' + p.roi + '%</span>' : '';
+      var cdTag = '';
+      if (inBuildTest(p)) {
+        var bi = buildInfo(p);
+        if (bi) cdTag = '<span class="cd-chip' + (bi.overdue ? ' cd-over' : '') + '">' +
+          (bi.overdue ? 'Overdue ' + Math.abs(bi.days) + 'd' : bi.days + 'd left') + '</span>';
+      }
       return '<div class="row">' +
         '<div class="grow">' +
           '<p class="p-title">' + esc(p.title) + '</p>' +
-          '<span class="pill ' + pill.cls + '"><span class="dot"></span>' + esc(pill.label) + '</span>' +
+          '<span class="pill ' + pill.cls + '"><span class="dot"></span>' + esc(pill.label) + '</span>' + roiTag + cdTag +
         '</div>' +
         '<button class="viewbtn" data-view="' + p.id + '">View</button>' +
         '<div class="meta">submitted by<br><span class="who">' + esc(submitter(p)) + '</span><br>' + fmt(p.createdAt) + '</div>' +
@@ -503,12 +525,12 @@
         ta('f-tools', 'Planned tools / tech', 'Tools, platforms or frameworks you plan to use (e.g. Google Sheets, Power Automate, a web app). Helps IT review feasibility.', false, 2, 500) +
         '<p class="sec-l" style="margin-top:4px">Cost &amp; return</p>' +
         '<div class="grid2">' +
-          fldNum('f-investment', 'Cost investment (RM) per annum', 'e.g. 12000 — subscription, licences') +
-          fldNum('f-returns', 'Net Return / benefit (RM) per annum', 'e.g. 30000 — annual cost saving') +
+          fldNum('f-investment', 'Expense (RM) per annum', 'e.g. 12000 — subscription, licences') +
+          fldNum('f-returns', 'Cost Savings / Benefit (RM) per annum', 'e.g. 30000 — annual cost saving') +
         '</div>' +
         '<div class="field"><label for="f-roi">ROI (auto-calculated)</label>' +
           '<input id="f-roi" type="text" value="—" readonly style="max-width:220px;background:#f4f5f8;font-weight:700" />' +
-          '<div class="hint">ROI = Net return ÷ Cost of investment × 100%.</div></div>' +
+          '<div class="hint">ROI = (Cost Savings − Expense) ÷ Expense × 100%.</div></div>' +
         '<div class="field"><label>Attachments <span class="hint" style="font-weight:500">(optional — up to 2 files or images, max 3 MB each)</span></label>' +
           '<input id="f-file1" type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" style="margin-bottom:8px" />' +
           '<input id="f-file2" type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" /></div>' +
@@ -546,7 +568,7 @@
   function calcRoi(inv, ret) {
     inv = parseFloat(inv); ret = parseFloat(ret);
     if (!isFinite(inv) || inv <= 0 || !isFinite(ret)) return null;
-    return Math.round((ret / inv) * 1000) / 10; // ROI % = net return ÷ cost of investment, 1 decimal
+    return Math.round(((ret - inv) / inv) * 1000) / 10; // ROI % = (cost savings − expense) ÷ expense, 1 decimal
   }
   function readFile(input) {
     return new Promise(function (resolve, reject) {
@@ -849,12 +871,20 @@
   }
 
   /* ---------- feasibility feedback (proposer, at Build & Test) ---------- */
+  function safeUrl(u) {
+    u = (u || '').trim();
+    if (!u) return '';
+    return /^https?:\/\//i.test(u) ? u : 'https://' + u; // force a safe http(s) scheme
+  }
   function yesNo(v) {
     if (v === 'yes') return '<span class="fz-yes">Yes</span>';
     if (v === 'no') return '<span class="fz-no">No</span>';
     return '<span class="fz-na">—</span>';
   }
   function feasibilityView(f) {
+    var link = f.systemLink
+      ? '<p style="margin:0 0 12px"><a class="btn btn-primary btn-sm" href="' + esc(safeUrl(f.systemLink)) + '" target="_blank" rel="noopener">Open the system to review &#8599;</a></p>'
+      : '';
     var metrics = FEAS_METRICS.map(function (m) {
       return f[m.k] ? '<div class="fz-row"><span class="fz-l">' + esc(m.label) + '</span><span class="fz-v">' + esc(f[m.k]) + '</span></div>' : '';
     }).join('');
@@ -863,7 +893,7 @@
     }).join('');
     var text = (f.issues ? '<p class="sec-l" style="margin-top:12px">Remaining issues / risks</p><p class="desc">' + esc(f.issues) + '</p>' : '') +
       (f.comment ? '<p class="sec-l">Comments</p><p class="desc">' + esc(f.comment) + '</p>' : '');
-    return '<div class="fz-card">' + metrics + checks + text +
+    return '<div class="fz-card">' + link + metrics + checks + text +
       '<div class="fz-by">Submitted by ' + esc(f.by || '') + ' &middot; ' + fmt(f.at) + '</div></div>';
   }
   function feasibilityForm(p, f) {
@@ -882,6 +912,8 @@
       return '<div class="ev-row"><span class="ev-cn">' + esc(c.label) + '</span><span class="ev-opts">' + opts + '</span></div>';
     }).join('');
     return '<div class="fz-form">' +
+      '<div class="field"><label for="fz-link-' + p.id + '">System link (URL) <span class="hint" style="font-weight:500">— reviewers open this at final approval</span></label>' +
+      '<input id="fz-link-' + p.id + '" type="url" placeholder="https://your-system-link…" value="' + esc(f.systemLink || '') + '" /></div>' +
       '<div class="grid2">' + metrics + '</div>' +
       '<div class="ev-grid">' + checks + '</div>' +
       '<div class="field" style="margin-top:12px"><label for="fz-issues-' + p.id + '">Remaining issues or risks</label>' +
@@ -897,7 +929,16 @@
     var isBT = (p.status !== 'rejected') && (p.done + 1 === TESTING_STAGE);
     var f = p.feasibility;
     if (!isBT && !f) return '';
-    var body = '<p class="sec-l">Feasibility feedback</p>';
+    var body = '';
+    if (isBT) {
+      var bi = buildInfo(p);
+      if (bi) body += '<div class="cd-box' + (bi.overdue ? ' cd-over' : '') + '">&#9203; <b>Build &amp; test deadline</b> &middot; ' + fmt(bi.deadline) +
+        ' &mdash; ' + (bi.overdue
+          ? 'overdue by ' + Math.abs(bi.days) + ' day' + (Math.abs(bi.days) === 1 ? '' : 's')
+          : bi.days + ' day' + (bi.days === 1 ? '' : 's') + ' left') +
+        ' <span class="cd-sub">(90 days from IT Review)</span></div>';
+    }
+    body += '<p class="sec-l">Feasibility feedback</p>';
     if (isBT) body += '<p class="hint" style="margin-bottom:8px">Filled in by the proposer after building &amp; testing, for Management to review before final approval.</p>';
     if (f) body += feasibilityView(f);
     if (isBT) {
@@ -919,9 +960,9 @@
     var money = function (v) { return (v === 0 || v) ? 'RM ' + Number(v).toLocaleString('en-US') : '—'; };
     var cost = '';
     if (p.investment != null || p.returns != null || p.roi != null) {
-      cost = '<p class="sec-l">Cost &amp; return</p><p class="desc">' +
-        'Cost investment: <b>' + money(p.investment) + '</b><br>' +
-        'Return / benefit: <b>' + money(p.returns) + '</b><br>' +
+      cost = '<p class="sec-l">Expense &amp; savings</p><p class="desc">' +
+        'Expense: <b>' + money(p.investment) + '</b><br>' +
+        'Cost savings / benefit: <b>' + money(p.returns) + '</b><br>' +
         'ROI: <b>' + (p.roi == null ? '—' : p.roi + '%') + '</b></p>';
     }
 
@@ -965,7 +1006,7 @@
         itReviewSection(p) +
         feasibilitySection(p) +
         '<p class="sec-l">Move this proposal</p>' +
-        '<div class="note-in"><input type="text" placeholder="Add a note (optional)" id="note-' + p.id + '" maxlength="160" /></div>' +
+        '<div class="note-in"><input type="text" placeholder="Add a note — required if rejecting or sending back" id="note-' + p.id + '" maxlength="160" /></div>' +
         actionsHTML(p) +
         '<p class="sec-l">Activity</p><ul class="history">' + rows + '</ul>' +
       '</div>', 'wide');
@@ -984,6 +1025,7 @@
     var note = logNote(p);
     var wasGate = STAGES[p.done + 1] && STAGES[p.done + 1].type === 'gate';
     p.done += 1;
+    if ((p.done + 1) === TESTING_STAGE && !p.buildStart) p.buildStart = Date.now(); // entering Build & Test → start 90-day clock
     var reached = STAGES[p.done];
     var label = p.done >= STAGES.length - 1 ? 'System went live'
       : ((wasGate ? 'Approved' : (reached.name + ' completed')) + actorTag());
@@ -1004,6 +1046,7 @@
   async function sendBack(p) {
     if (!canMove(p, 'back')) return denied();
     var note = logNote(p);
+    if (!note) { toast('Add a comment/reason in the note box before sending it back'); return; }
     if (p.done > 0) p.done -= 1;
     p.approvals = {};
     p.history.push({ at: Date.now(), label: 'Sent back to ' + STAGES[p.done].name + actorTag(), note: note });
@@ -1013,6 +1056,7 @@
   async function reject(p) {
     if (!canMove(p, 'reject')) return denied();
     var note = logNote(p);
+    if (!note) { toast('Add a comment/reason in the note box before rejecting'); return; }
     p.status = 'rejected';
     p.approvals = {};
     p.history.push({ at: Date.now(), label: 'Rejected at ' + STAGES[p.done + 1].name + actorTag(), note: note });
@@ -1103,6 +1147,7 @@
     FEAS_CHECKS.forEach(function (c) { var sel = root.querySelector('input[name="fz-' + c.k + '-' + p.id + '"]:checked'); f[c.k] = sel ? sel.value : ''; if (sel) any = true; });
     var iss = el('fz-issues-' + p.id); f.issues = iss ? iss.value.trim() : ''; if (f.issues) any = true;
     var com = el('fz-comment-' + p.id); f.comment = com ? com.value.trim() : ''; if (f.comment) any = true;
+    var lnk = el('fz-link-' + p.id); f.systemLink = lnk ? lnk.value.trim() : ''; if (f.systemLink) any = true;
     if (!any) { toast('Fill in at least one field'); return; }
     var update = !!p.feasibility;
     p.feasibility = f;
