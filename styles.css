@@ -164,14 +164,30 @@
 #app-root .search:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
 
 #app-root .plist { display: block; }
-#app-root .row {
-  display: flex; align-items: center; gap: 16px;
-  padding: 20px 30px; border-top: 1px solid var(--line-soft);
-}
-#app-root .row .grow { flex: 1; min-width: 0; }
-#app-root .row .p-title { font-size: 19px; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.01em; }
-#app-root .row .meta { text-align: right; font-size: 13px; color: var(--ink-faint); line-height: 1.4; white-space: nowrap; }
-#app-root .row .meta .who { color: var(--ink-soft); font-weight: 600; }
+
+/* list tabs */
+#app-root .list-tabs { display: flex; gap: 8px; padding: 4px 30px 0; flex-wrap: wrap; }
+#app-root .list-tabs:empty { display: none; }
+#app-root .ltab { border: 0; background: transparent; font: inherit; font-size: 14px; font-weight: 600; color: var(--ink-faint); padding: 8px 14px; border-radius: 10px; cursor: pointer; display: inline-flex; align-items: center; }
+#app-root .ltab:hover { color: var(--ink); }
+#app-root .ltab.on { background: #f0f1f5; color: var(--ink); }
+#app-root .ltab-n { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--stop); color: #fff; font-size: 11px; font-weight: 700; margin-left: 6px; }
+
+/* table-style list */
+#app-root .list-head, #app-root .row { display: grid; grid-template-columns: 1fr 76px 210px 96px; align-items: center; gap: 14px; }
+#app-root .list-head { padding: 12px 30px 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); border-top: 1px solid var(--line-soft); }
+#app-root .row { padding: 16px 30px; border-top: 1px solid var(--line-soft); }
+#app-root .lh-roi { text-align: left; }
+#app-root .lh-action { text-align: right; }
+#app-root .cell-proj { min-width: 0; }
+#app-root .cell-proj .p-title { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+#app-root .p-sub { font-size: 12.5px; color: var(--ink-faint); margin: 4px 0 0; }
+#app-root .p-sub b { color: var(--ink-soft); font-weight: 600; }
+#app-root .cell-roi .roi-tag { margin-left: 0; }
+#app-root .cell-roi .muted { color: var(--ink-faint); font-weight: 600; }
+#app-root .cell-status { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#app-root .cell-status .roi-tag, #app-root .cell-status .cd-chip { margin-left: 0; }
+#app-root .cell-action { text-align: right; }
 
 #app-root .viewbtn {
   font: inherit; font-size: 15px; font-weight: 600; color: var(--ink);
@@ -393,10 +409,14 @@
   #app-root .rnode:nth-child(4) { border-left: 0; }
   #app-root .rnode { border-top: 1px solid var(--line); }
   #app-root .rnode:nth-child(-n+3) { border-top: 0; }
-  #app-root .panel-head, #app-root .search-wrap, #app-root .row { padding-left: 18px; padding-right: 18px; }
+  #app-root .panel-head, #app-root .search-wrap, #app-root .row, #app-root .list-tabs, #app-root .list-head { padding-left: 18px; padding-right: 18px; }
   #app-root .grid2 { grid-template-columns: 1fr; }
-  #app-root .row { flex-wrap: wrap; }
-  #app-root .row .meta { text-align: left; white-space: normal; }
+  #app-root .list-head { display: none; }
+  #app-root .row { grid-template-columns: 1fr auto; grid-template-areas: "proj action" "status action" "roi action"; row-gap: 8px; column-gap: 12px; align-items: start; }
+  #app-root .cell-proj { grid-area: proj; }
+  #app-root .cell-status { grid-area: status; }
+  #app-root .cell-roi { grid-area: roi; }
+  #app-root .cell-action { grid-area: action; align-self: center; }
   #app-root .h-when { min-width: 0; }
   #app-root .history li { flex-direction: column; gap: 2px; }
 }

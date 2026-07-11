@@ -359,7 +359,11 @@
     if ((act === 'adv' || act === 'back') && active && active.type === 'gate') {
       return canApproveGate(currentUser, p); // gate: PIC/IT/Director only, and not the proposer
     }
-    return true; // non-gate step / milestone: any logged-in user
+    // IT Review step and the Deploy & Go Live milestone — only the IT team (or admin)
+    if ((act === 'adv' || act === 'back') && ((p.done + 1) === IT_STAGE || (active && active.type === 'milestone'))) {
+      return canITReview(currentUser);
+    }
+    return true; // other non-gate steps: any logged-in user
   }
   function loginPrompt(msg) {
     return '<span class="hint">' + esc(msg) + '</span> <button class="btn btn-ghost btn-sm" data-auth="login">Log in</button>';
@@ -376,6 +380,7 @@
   var detailId = null;
   var sopIdx = null;
   var editingId = null;
+  var listTab = 'all'; // 'all' | 'mine' (pending my approval)
 
   var el = function (id) { return document.getElementById(id); };
   function esc(s) {
@@ -445,18 +450,46 @@
     var hay = [p.title, p.proposer, p.email, p.objective, p.proposerDept].join(' ').toLowerCase();
     return hay.indexOf(query) !== -1;
   }
+  function canApproveAny(u) { return isAdmin(u) || isManagement(u) || isDirector(u); }
+  function needsMyApproval(p) {
+    if (!currentUser || p.status === 'rejected') return false;
+    var active = STAGES[p.done + 1];
+    if (!active || active.type !== 'gate') return false;
+    var g = (p.approvals && p.approvals[String(p.done + 1)]) || {};
+    var req = requiredSlots(p);
+    return eligibleSlots(currentUser, p).some(function (s) { return req.indexOf(s) !== -1 && !g[s]; });
+  }
+  function renderTabs() {
+    var box = el('list-tabs'); if (!box) return;
+    if (!canApproveAny(currentUser)) { box.innerHTML = ''; if (listTab === 'mine') listTab = 'all'; return; }
+    var mineCount = data.filter(needsMyApproval).length;
+    box.innerHTML =
+      '<button class="ltab' + (listTab === 'all' ? ' on' : '') + '" data-ltab="all">All proposals</button>' +
+      '<button class="ltab' + (listTab === 'mine' ? ' on' : '') + '" data-ltab="mine">Pending my approval' +
+        (mineCount ? ' <span class="ltab-n">' + mineCount + '</span>' : '') + '</button>';
+  }
   function render() {
     el('count').textContent = data.length + ' total';
-    var list = data.filter(matches);
+    renderTabs();
+    var list = data.filter(function (p) {
+      if (listTab === 'mine' && !needsMyApproval(p)) return false;
+      return matches(p);
+    });
     var box = el('plist');
     if (!data.length) {
       box.innerHTML = '<div class="empty"><p>No proposals yet — click “+ New proposal” to add the first one.</p></div>';
       return;
     }
-    if (!list.length) { box.innerHTML = '<div class="empty"><p>Nothing matches your search.</p></div>'; return; }
-    box.innerHTML = list.map(function (p) {
+    if (!list.length) {
+      box.innerHTML = '<div class="empty"><p>' +
+        (listTab === 'mine' ? 'Nothing is waiting on your approval right now.' : 'Nothing matches your search.') + '</p></div>';
+      return;
+    }
+    var header = '<div class="list-head"><span>Project</span><span class="lh-roi">ROI</span>' +
+      '<span class="lh-status">Status</span><span class="lh-action">Action</span></div>';
+    box.innerHTML = header + list.map(function (p) {
       var pill = statusPill(p);
-      var roiTag = (p.roi === 0 || p.roi) ? '<span class="roi-tag">ROI ' + p.roi + '%</span>' : '';
+      var roiCell = (p.roi === 0 || p.roi) ? '<span class="roi-tag">' + p.roi + '%</span>' : '<span class="muted">—</span>';
       var cdTag = '';
       if (inBuildTest(p)) {
         var bi = buildInfo(p);
@@ -464,12 +497,13 @@
           (bi.overdue ? 'Overdue ' + Math.abs(bi.days) + 'd' : bi.days + 'd left') + '</span>';
       }
       return '<div class="row">' +
-        '<div class="grow">' +
+        '<div class="cell-proj">' +
           '<p class="p-title">' + esc(p.title) + '</p>' +
-          '<span class="pill ' + pill.cls + '"><span class="dot"></span>' + esc(pill.label) + '</span>' + roiTag + cdTag +
+          '<p class="p-sub">submitted by <b>' + esc(submitter(p)) + '</b> &middot; ' + fmt(p.createdAt) + '</p>' +
         '</div>' +
-        '<button class="viewbtn" data-view="' + p.id + '">View</button>' +
-        '<div class="meta">submitted by<br><span class="who">' + esc(submitter(p)) + '</span><br>' + fmt(p.createdAt) + '</div>' +
+        '<div class="cell-roi">' + roiCell + '</div>' +
+        '<div class="cell-status"><span class="pill ' + pill.cls + '"><span class="dot"></span>' + esc(pill.label) + '</span>' + cdTag + '</div>' +
+        '<div class="cell-action"><button class="viewbtn" data-view="' + p.id + '">View</button></div>' +
       '</div>';
     }).join('');
   }
@@ -724,6 +758,11 @@
     var active = STAGES[p.done + 1];
     var nextName = STAGES[p.done + 2] ? STAGES[p.done + 2].name : 'next';
     if (active.type === 'gate') return gatePanelHTML(p);
+    if (!canMove(p, 'adv')) {
+      var who = ((p.done + 1) === IT_STAGE || active.type === 'milestone') ? 'the IT team' : 'the responsible team';
+      var verb = active.type === 'milestone' ? 'deploy &amp; go live' : 'move this to the next stage';
+      return '<div class="actions-row"><span class="hint">Awaiting ' + esc(active.name) + ' &mdash; only ' + who + ' can ' + verb + '.</span></div>';
+    }
     var html = '';
     if (active.type === 'milestone') {
       html += '<button class="btn btn-primary btn-sm" data-act="adv" data-id="' + p.id + '">Mark as live</button>';
@@ -1583,6 +1622,10 @@
     showForm();
   };
   el('search').addEventListener('input', function (e) { query = e.target.value.trim().toLowerCase(); render(); });
+  el('list-tabs').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-ltab]'); if (!b) return;
+    listTab = b.getAttribute('data-ltab'); render();
+  });
 
   el('plist').addEventListener('click', function (e) {
     var v = e.target.closest('[data-view]'); if (!v) return;
