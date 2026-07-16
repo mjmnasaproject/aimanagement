@@ -653,7 +653,6 @@
     });
   }
   async function submitProposal() {
-    if (!currentUser) { toast('Please log in first'); showAuth('login'); return; }
     var proposer = el('f-proposer').value.trim();
     var title = el('f-title').value.trim();
     var objective = el('f-objective').value.trim();
@@ -714,7 +713,7 @@
       returns: isFinite(returns) ? returns : null,
       roi: calcRoi(el('f-investment').value, el('f-returns').value),
       attachments: files,
-      submittedBy: currentUser.id,
+      submittedBy: currentUser ? currentUser.id : null,
       done: 0, status: 'active',
       createdAt: Date.now(), updatedAt: Date.now(),
       evaluations: [],
@@ -1434,8 +1433,8 @@
   function logout() {
     currentUser = null; setSession(null);
     if (settingsMode) closeSettings();
+    if (el('backdrop').className.indexOf('show') !== -1) closeModal();
     renderAuth(); render();
-    showGate();
     toast('Signed out');
   }
 
@@ -1636,10 +1635,7 @@
     var b = e.target.closest('[data-sop]'); if (!b) return;
     showSop(parseInt(b.getAttribute('data-sop'), 10));
   });
-  el('new-btn').onclick = function () {
-    if (!currentUser) { toast('Log in to submit a proposal'); showAuth('login'); return; }
-    showForm();
-  };
+  el('new-btn').onclick = function () { showForm(); };
   el('search').addEventListener('input', function (e) { query = e.target.value.trim().toLowerCase(); render(); });
   el('list-tabs').addEventListener('click', function (e) {
     var b = e.target.closest('[data-ltab]'); if (!b) return;
@@ -1686,10 +1682,10 @@
 
   /* ---------- boot ---------- */
   renderRail();
-  resolveSession();      // restore login instantly from the saved copy — no loading screen, survives refresh
+  resolveSession();      // restore login if they signed in before (browsing no longer requires it)
   gated = false;
   renderAuth();
-  if (!currentUser) showGate();   // not signed in → straight to the login page
+  render();              // open browsing — show proposals to everyone, no login gate
   (async function () {
     users = await loadUsers();
     if (!Array.isArray(users)) users = [];
@@ -1703,22 +1699,19 @@
     data.forEach(function (p) { if (!p.evaluations) p.evaluations = []; });
     renderAuth();
     render();
-    if (!currentUser) showGate();
-    else if (modalMode === 'auth') closeModal();
+    if (modalMode === 'auth') closeModal();
   })();
 
-  // light poll so notifications / others' changes surface without a manual reload
+  // light poll so others' changes surface without a manual reload (runs for guests too)
   if (sb && window.setInterval) {
     setInterval(async function () {
-      if (!currentUser) return;
       try {
         var n = await loadNotes(); if (Array.isArray(n)) notes = n;
         var uu = await loadUsers(); if (Array.isArray(uu)) { users = uu; normalizeUsers(); }
         var dd = await loadAll(); if (Array.isArray(dd)) { data = dd; data.forEach(function (p) { if (!p.evaluations) p.evaluations = []; }); }
         resolveSession();
-        if (!currentUser) { showGate(); return; }
         renderAuth();
-        if (!gated && !settingsMode && el('backdrop').className.indexOf('show') === -1) render();
+        if (!settingsMode && el('backdrop').className.indexOf('show') === -1) render();
       } catch (e) {}
     }, 45000);
   }
